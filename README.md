@@ -138,8 +138,8 @@ Compiled installers will be placed in `src-tauri/target/release/bundle/`:
 ### Automated GitHub Releases
 Every Git version tag pushed to the repository automatically triggers the GitHub Actions release workflow:
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1.0
+git push origin v1.1.0
 ```
 GitHub Actions compiles binaries for Windows, macOS (Universal Apple Silicon & Intel), and Linux (Ubuntu), and automatically publishes them to your repository's Releases page.
 
