@@ -2,7 +2,7 @@
 name = "lunoite"
 version = "1.1.0"
 description = "Distraction-free WYSIWYG Markdown workspace and IDE"
-authors = ["you"]
+authors = ["Moondust Labs"]
 license = ""
 repository = ""
 edition = "2021"

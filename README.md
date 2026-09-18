@@ -147,4 +147,4 @@ GitHub Actions compiles binaries for Windows, macOS (Universal Apple Silicon & I
 
 ## License
 
-MIT License. Feel free to use, modify, and distribute this application.
+MIT License © 2026 Moondust Labs. Feel free to use, modify, and distribute this application.
