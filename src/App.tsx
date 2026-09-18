@@ -1,122 +1,205 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Editor } from '@tiptap/react';
 import { useTheme } from './hooks/useTheme';
-import { useFileSystem } from './hooks/useFileSystem';
+import { useWorkspace } from './hooks/useWorkspace';
+import { useTabs } from './hooks/useTabs';
 import { useLocalStorage } from './hooks/useLocalStorage';
+
 import { Header } from './components/Header';
 import { StatusBar } from './components/StatusBar';
+import { TabBar } from './components/Editor/TabBar';
 import { EditorCanvas } from './components/Editor/EditorCanvas';
+import { WorkspaceExplorer } from './components/Sidebar/WorkspaceExplorer';
 import { ReferenceShelf } from './components/Shelf/ReferenceShelf';
 import { ShortcutsModal } from './components/ShortcutsModal';
-import { STARTER_MARKDOWN, computeStats, downloadMarkdownFile } from './lib/markdown';
+import { WelcomeWorkspace } from './components/Workspace/WelcomeWorkspace';
+
+import { computeStats, downloadMarkdownFile } from './lib/markdown';
 import { INITIAL_CARDS } from './lib/defaultCards';
 import { ReferenceCard } from './types/shelf';
-import { DocumentStats } from './types/editor';
+import { DocumentStats, SaveStatus } from './types/editor';
+import { FileTreeNode } from './types/workspace';
 
 export const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
 
-  // Local storage backups
-  const [cachedMarkdown, setCachedMarkdown] = useLocalStorage<string>(
-    'lunoite_doc_content',
-    STARTER_MARKDOWN
-  );
-  const [cachedFileName, setCachedFileName] = useLocalStorage<string>(
-    'lunoite_doc_filename',
-    'welcome.md'
-  );
+  // Workspace state & operations
+  const {
+    workspace,
+    isNativeSupported,
+    openWorkspace,
+    closeWorkspace,
+    refreshTree,
+    readFile,
+    writeFile,
+    createFile,
+    createFolder,
+    deleteEntry,
+    renameEntry,
+  } = useWorkspace();
+
+  // Multi-tab document manager
+  const {
+    tabs,
+    activeTabId,
+    activeTab,
+    setActiveTabId,
+    openTab,
+    closeTab,
+    updateTabContent,
+    markTabClean,
+  } = useTabs();
+
+  // Reference shelf cards (stored in localStorage)
   const [cards, setCards] = useLocalStorage<ReferenceCard[]>(
     'lunoite_reference_cards',
     INITIAL_CARDS
   );
 
-  // File system hook
-  const {
-    fileHandle,
-    fileName,
-    setFileName,
-    saveStatus,
-    markUnsaved,
-    openLocalFile,
-    saveToCurrentFile,
-    createNewFile,
-  } = useFileSystem(cachedFileName);
-
-  // Editor instance reference
+  // Editor and UI state
   const editorRef = useRef<Editor | null>(null);
-  const [currentMarkdown, setCurrentMarkdown] = useState<string>(cachedMarkdown);
-  const [stats, setStats] = useState<DocumentStats>(() => computeStats(cachedMarkdown));
+  const saveTimeoutRef = useRef<number | null>(null);
 
-  // UI state
-  const [isZenMode, setIsZenMode] = useState<boolean>(false);
+  const [isExplorerOpen, setIsExplorerOpen] = useState<boolean>(true);
   const [isShelfOpen, setIsShelfOpen] = useState<boolean>(false);
+  const [isZenMode, setIsZenMode] = useState<boolean>(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
   const [clipText, setClipText] = useState<string | undefined>(undefined);
+  const [isSavingToDisk, setIsSavingToDisk] = useState<boolean>(false);
 
-  // Sync filename changes with cache
-  const handleRename = useCallback(
-    (newName: string) => {
-      setFileName(newName);
-      setCachedFileName(newName);
-      markUnsaved();
+  // Stats calculation
+  const stats: DocumentStats = activeTab
+    ? computeStats(activeTab.content)
+    : { words: 0, characters: 0, readingTimeMinutes: 0, lines: 0 };
+
+  // Compute SaveStatus
+  const saveStatus: SaveStatus = isSavingToDisk
+    ? 'saving'
+    : activeTab
+      ? activeTab.isDirty
+        ? 'unsaved'
+        : 'saved'
+      : 'local_only';
+
+  // Open file from explorer tree
+  const handleSelectFile = useCallback(
+    async (node: FileTreeNode) => {
+      if (node.kind === 'file') {
+        const content = await readFile(node.handle as FileSystemFileHandle);
+        openTab(node, content);
+      }
     },
-    [setFileName, setCachedFileName, markUnsaved]
+    [readFile, openTab]
   );
 
-  // Handle editor updates
+  // Save current active tab directly to disk
+  const handleSaveActiveTab = useCallback(async () => {
+    if (!activeTab) return;
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+
+    if (activeTab.handle && typeof activeTab.handle.createWritable === 'function') {
+      setIsSavingToDisk(true);
+      const success = await writeFile(activeTab.handle, activeTab.content);
+      setIsSavingToDisk(false);
+      if (success) {
+        markTabClean(activeTab.id);
+      }
+    } else {
+      markTabClean(activeTab.id);
+    }
+  }, [activeTab, writeFile, markTabClean]);
+
+  // Handle editor updates with debounced direct disk auto-sync
   const handleEditorChange = useCallback(
-    (markdown: string) => {
-      setCurrentMarkdown(markdown);
-      setCachedMarkdown(markdown);
-      setStats(computeStats(markdown));
-      markUnsaved();
+    (newMarkdown: string) => {
+      if (!activeTab) return;
+
+      updateTabContent(activeTab.id, newMarkdown);
+
+      if (activeTab.handle && typeof activeTab.handle.createWritable === 'function') {
+        // Debounce auto-save directly to disk (~800ms)
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+
+        saveTimeoutRef.current = window.setTimeout(async () => {
+          setIsSavingToDisk(true);
+          const success = await writeFile(activeTab.handle, newMarkdown);
+          setIsSavingToDisk(false);
+          if (success) {
+            markTabClean(activeTab.id);
+          }
+        }, 800);
+      }
     },
-    [setCachedMarkdown, markUnsaved]
+    [activeTab, updateTabContent, writeFile, markTabClean]
   );
 
-  // Save document (Ctrl+S or button)
-  const handleSave = useCallback(async () => {
-    const success = await saveToCurrentFile(currentMarkdown);
-    if (success) {
-      setCachedFileName(fileName);
-    }
-  }, [saveToCurrentFile, currentMarkdown, fileName, setCachedFileName]);
+  // Create new file
+  const handleCreateFile = useCallback(
+    async (parentHandle: FileSystemDirectoryHandle, name: string) => {
+      const newHandle = await createFile(parentHandle, name);
+      if (newHandle) {
+        const cleanName = name.includes('.') ? name : `${name}.md`;
+        const initialText = '# Untitled\n\nStart writing...\n';
+        const dummyNode: FileTreeNode = {
+          id: cleanName,
+          name: cleanName,
+          path: cleanName,
+          kind: 'file',
+          handle: newHandle,
+          parentHandle,
+          extension: 'md',
+        };
+        openTab(dummyNode, initialText);
+      }
+    },
+    [createFile, openTab]
+  );
 
-  // Open existing local file
-  const handleOpen = useCallback(async () => {
-    const result = await openLocalFile();
-    if (result && editorRef.current) {
-      editorRef.current.commands.setContent(result.text);
-      setCurrentMarkdown(result.text);
-      setCachedMarkdown(result.text);
-      setCachedFileName(result.name);
-      setStats(computeStats(result.text));
-    }
-  }, [openLocalFile, setCachedMarkdown, setCachedFileName]);
+  // Create new folder
+  const handleCreateFolder = useCallback(
+    async (parentHandle: FileSystemDirectoryHandle, name: string) => {
+      await createFolder(parentHandle, name);
+    },
+    [createFolder]
+  );
 
-  // Create brand new file
-  const handleNew = useCallback(() => {
-    if (saveStatus === 'unsaved') {
-      const confirmDiscard = window.confirm(
-        'You have unsaved changes in your document. Create a new document anyway?'
-      );
-      if (!confirmDiscard) return;
-    }
-    const emptyDoc = '# Untitled Document\n\nStart writing here...\n';
-    if (editorRef.current) {
-      editorRef.current.commands.setContent(emptyDoc);
-    }
-    setCurrentMarkdown(emptyDoc);
-    setCachedMarkdown(emptyDoc);
-    createNewFile('untitled.md');
-    setCachedFileName('untitled.md');
-    setStats(computeStats(emptyDoc));
-  }, [saveStatus, createNewFile, setCachedMarkdown, setCachedFileName]);
+  // Delete node
+  const handleDeleteNode = useCallback(
+    async (parentHandle: FileSystemDirectoryHandle, name: string) => {
+      const targetTab = tabs.find(t => t.name === name);
+      if (targetTab) {
+        closeTab(targetTab.id);
+      }
+      await deleteEntry(parentHandle, name);
+    },
+    [tabs, closeTab, deleteEntry]
+  );
 
-  // Export as .md
+  // Rename node
+  const handleRenameNode = useCallback(
+    async (
+      parentHandle: FileSystemDirectoryHandle,
+      oldName: string,
+      newName: string,
+      kind: 'file' | 'directory'
+    ) => {
+      await renameEntry(parentHandle, oldName, newName, kind);
+    },
+    [renameEntry]
+  );
+
+  // Export current file
   const handleExport = useCallback(() => {
-    downloadMarkdownFile(fileName, currentMarkdown);
-  }, [fileName, currentMarkdown]);
+    if (activeTab) {
+      downloadMarkdownFile(activeTab.name, activeTab.content);
+    }
+  }, [activeTab]);
 
   // Reference Shelf operations
   const handleInsertCard = useCallback((content: string) => {
@@ -161,25 +244,47 @@ export const App: React.FC = () => {
     [setCards]
   );
 
+  // Scratchpad fallback (when user wants to write without opening a folder)
+  const handleOpenScratchpad = useCallback(() => {
+    const dummyNode: FileTreeNode = {
+      id: 'scratchpad.md',
+      name: 'scratchpad.md',
+      path: 'scratchpad.md',
+      kind: 'file',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handle: {} as any,
+      extension: 'md',
+    };
+    openTab(
+      dummyNode,
+      '# Quick Scratchpad\n\nStart writing notes without opening a folder...\n'
+    );
+  }, [openTab]);
+
   // Global application shortcuts
   useEffect(() => {
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
-      // Ctrl+O: Open file
+      // Ctrl+O: Open workspace folder
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
         e.preventDefault();
-        handleOpen();
+        openWorkspace();
       }
-      // Alt+Z: Toggle Zen mode
-      if (e.altKey && e.key.toLowerCase() === 'z') {
+      // Alt+E: Toggle explorer
+      if (e.altKey && e.key.toLowerCase() === 'e') {
         e.preventDefault();
-        setIsZenMode(prev => !prev);
+        setIsExplorerOpen(prev => !prev);
       }
       // Alt+S: Toggle Reference Shelf
       if (e.altKey && e.key.toLowerCase() === 's') {
         e.preventDefault();
         setIsShelfOpen(prev => !prev);
       }
-      // Esc: Exit Zen mode if active
+      // Alt+Z: Toggle Zen mode
+      if (e.altKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        setIsZenMode(prev => !prev);
+      }
+      // Esc: Exit Zen mode
       if (e.key === 'Escape' && isZenMode) {
         setIsZenMode(false);
       }
@@ -187,19 +292,37 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
-  }, [handleOpen, isZenMode]);
+  }, [openWorkspace, isZenMode]);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#f8f7f4] dark:bg-[#111215] text-[#191b1f] dark:text-[#eceef2] font-sans antialiased transition-colors duration-200">
-      {/* Top Navigation Bar */}
+      {/* Top Header Bar */}
       <Header
-        fileName={fileName}
-        onRename={handleRename}
+        workspaceName={workspace.name || undefined}
+        fileName={activeTab ? activeTab.name : 'No file open'}
+        onRename={newName => {
+          if (activeTab && activeTab.parentDirHandle) {
+            handleRenameNode(
+              activeTab.parentDirHandle,
+              activeTab.name,
+              newName,
+              'file'
+            );
+          }
+        }}
         saveStatus={saveStatus}
-        onNewFile={handleNew}
-        onOpenFile={handleOpen}
-        onSaveFile={handleSave}
+        onOpenWorkspace={openWorkspace}
+        onNewFile={() => {
+          if (workspace.rootHandle) {
+            handleCreateFile(workspace.rootHandle, 'untitled.md');
+          } else {
+            handleOpenScratchpad();
+          }
+        }}
+        onSaveFile={handleSaveActiveTab}
         onExportFile={handleExport}
+        isExplorerOpen={isExplorerOpen}
+        onToggleExplorer={() => setIsExplorerOpen(prev => !prev)}
         isZenMode={isZenMode}
         onToggleZenMode={() => setIsZenMode(prev => !prev)}
         isShelfOpen={isShelfOpen}
@@ -207,23 +330,70 @@ export const App: React.FC = () => {
         onOpenShortcuts={() => setIsShortcutsOpen(true)}
         theme={theme}
         onToggleTheme={toggleTheme}
-        hasFileHandle={fileHandle !== null}
+        hasFileHandle={activeTab !== null && activeTab.handle !== undefined}
       />
 
-      {/* Main Workspace: Editor Canvas + Lateral Reference Shelf */}
-      <main className="flex-1 flex min-h-0 relative">
-        <EditorCanvas
-          initialContent={currentMarkdown}
-          onChange={handleEditorChange}
-          onSave={handleSave}
-          onClipSelection={handleClipSelection}
-          isZenMode={isZenMode}
-          onEditorReady={ed => {
-            editorRef.current = ed as Editor;
-          }}
-        />
+      {/* Main Workspace Area */}
+      <div className="flex-1 flex min-h-0 relative">
+        {/* Left: Workspace Explorer Sidebar (hidden in Zen mode) */}
+        {!isZenMode && (
+          <WorkspaceExplorer
+            isOpen={isExplorerOpen}
+            onClose={() => setIsExplorerOpen(false)}
+            workspace={workspace}
+            activeFileId={activeTabId}
+            onSelectFile={handleSelectFile}
+            onCreateFile={handleCreateFile}
+            onCreateFolder={handleCreateFolder}
+            onDeleteNode={handleDeleteNode}
+            onRenameNode={handleRenameNode}
+            onRefresh={refreshTree}
+            onCloseWorkspace={closeWorkspace}
+          />
+        )}
 
-        {/* Collapsible Lateral Reference Shelf */}
+        {/* Center: Tabs + WYSIWYG Editor Canvas */}
+        <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-[#f8f7f4] dark:bg-[#111215]">
+          {/* Multi-document TabBar (hidden in Zen mode) */}
+          {!isZenMode && (
+            <TabBar
+              tabs={tabs}
+              activeTabId={activeTabId}
+              onSelectTab={setActiveTabId}
+              onCloseTab={closeTab}
+            />
+          )}
+
+          {activeTab ? (
+            <EditorCanvas
+              initialContent={activeTab.content}
+              onChange={handleEditorChange}
+              onSave={handleSaveActiveTab}
+              onClipSelection={handleClipSelection}
+              isZenMode={isZenMode}
+              onEditorReady={ed => {
+                editorRef.current = ed as Editor;
+              }}
+            />
+          ) : workspace.rootHandle ? (
+            <div className="flex-1 flex items-center justify-center p-6 text-center text-xs text-[#59606d] dark:text-[#9ba2b0]">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-[#191b1f] dark:text-[#eceef2]">
+                  No document currently open
+                </p>
+                <p>Select a file from the explorer on the left, or click &quot;+ File&quot; to begin writing.</p>
+              </div>
+            </div>
+          ) : (
+            <WelcomeWorkspace
+              onOpenWorkspace={openWorkspace}
+              onOpenScratchpad={handleOpenScratchpad}
+              isNativeSupported={isNativeSupported}
+            />
+          )}
+        </main>
+
+        {/* Right: Collapsible Lateral Reference Shelf */}
         <ReferenceShelf
           isOpen={isShelfOpen}
           onClose={() => setIsShelfOpen(false)}
@@ -235,17 +405,19 @@ export const App: React.FC = () => {
           clipText={clipText}
           onClearClipText={() => setClipText(undefined)}
         />
-      </main>
+      </div>
 
       {/* Bottom Status Bar */}
       <StatusBar
         stats={stats}
-        fileName={fileName}
-        hasFileHandle={fileHandle !== null}
+        fileName={activeTab ? activeTab.name : 'No file'}
+        filePath={activeTab ? activeTab.path : undefined}
+        workspaceName={workspace.name || undefined}
+        hasFileHandle={activeTab !== null && activeTab.handle !== undefined}
         isZenMode={isZenMode}
       />
 
-      {/* Keyboard Shortcuts Reference Dialog */}
+      {/* Shortcuts Modal */}
       <ShortcutsModal
         isOpen={isShortcutsOpen}
         onClose={() => setIsShortcutsOpen(false)}

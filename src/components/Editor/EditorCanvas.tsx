@@ -95,6 +95,17 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
     }
   }, [editor, onEditorReady]);
 
+  // Sync editor content when switching between tabs
+  useEffect(() => {
+    if (editor) {
+      const storage = editor.storage as unknown as { markdown?: { getMarkdown: () => string } };
+      const current = storage.markdown ? storage.markdown.getMarkdown() : editor.getText();
+      if (initialContent !== current) {
+        editor.commands.setContent(initialContent, { emitUpdate: false });
+      }
+    }
+  }, [editor, initialContent]);
+
   // Global Ctrl+S listener
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
