@@ -116,6 +116,35 @@ npm run build
 
 ---
 
+## Desktop App & Automated Releases
+
+**lunoite** is packaged with **Tauri v2** for an ultra-lightweight native desktop experience (10-15 MB installer, ~30 MB RAM).
+
+### Local Desktop Development
+```bash
+# Requires Rust toolchain (https://rustup.rs)
+npx tauri dev
+```
+
+### Local Production Build
+```bash
+npx tauri build
+```
+Compiled installers will be placed in `src-tauri/target/release/bundle/`:
+- Windows: `.exe` (NSIS setup installer) and `.msi`
+- macOS: `.dmg` and `.app`
+- Linux: `.deb` and `.AppImage`
+
+### Automated GitHub Releases
+Every Git version tag pushed to the repository automatically triggers the GitHub Actions release workflow:
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+GitHub Actions compiles binaries for Windows, macOS (Universal Apple Silicon & Intel), and Linux (Ubuntu), and automatically publishes them to your repository's Releases page.
+
+---
+
 ## License
 
 MIT License. Feel free to use, modify, and distribute this application.
