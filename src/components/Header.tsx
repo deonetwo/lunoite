@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   FolderOpen,
+  FolderPlus,
   Save,
   Download,
   Moon,
@@ -16,6 +17,7 @@ import {
   Sidebar,
   FilePlus,
   Search,
+  ChevronDown,
 } from 'lucide-react';
 import { SaveStatus } from '../types/editor';
 import { Theme } from '../hooks/useTheme';
@@ -26,6 +28,8 @@ interface HeaderProps {
   onRename: (newName: string) => void;
   saveStatus: SaveStatus;
   onOpenWorkspace: () => void;
+  onCreateNewWorkspace?: () => void;
+  onOpenRecentWorkspaces?: () => void;
   onNewFile: () => void;
   onSaveFile: () => void;
   onExportFile: () => void;
@@ -48,6 +52,8 @@ export const Header: React.FC<HeaderProps> = ({
   onRename,
   saveStatus,
   onOpenWorkspace,
+  onCreateNewWorkspace,
+  onOpenRecentWorkspaces,
   onNewFile,
   onSaveFile,
   onExportFile,
@@ -148,49 +154,82 @@ export const Header: React.FC<HeaderProps> = ({
           lunoite
         </span>
 
-        {workspaceName && (
+        {workspaceName ? (
           <>
             <span className="text-[#e5e3dc] dark:text-[#282b33] hidden sm:inline">/</span>
-            <span className="text-xs text-[#59606d] dark:text-[#9ba2b0] truncate max-w-[100px] sm:max-w-[140px] font-medium">
-              {workspaceName}
-            </span>
+            {onOpenRecentWorkspaces ? (
+              <button
+                type="button"
+                onClick={onOpenRecentWorkspaces}
+                className="flex items-center gap-1 text-xs text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] hover:bg-black/5 dark:hover:bg-white/5 px-1.5 py-0.5 rounded truncate max-w-[90px] sm:max-w-[150px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+                title="Switch or manage workspaces"
+                aria-label="Switch or manage workspaces"
+              >
+                <span className="truncate">{workspaceName}</span>
+                <ChevronDown className="w-3 h-3 shrink-0 opacity-70" />
+              </button>
+            ) : (
+              <span className="text-xs text-[#59606d] dark:text-[#9ba2b0] truncate max-w-[90px] sm:max-w-[140px] font-medium">
+                {workspaceName}
+              </span>
+            )}
+          </>
+        ) : (
+          onOpenRecentWorkspaces && (
+            <>
+              <span className="text-[#e5e3dc] dark:text-[#282b33] hidden sm:inline">/</span>
+              <button
+                type="button"
+                onClick={onOpenRecentWorkspaces}
+                className="hidden sm:flex items-center gap-1 text-xs text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] hover:bg-black/5 dark:hover:bg-white/5 px-1.5 py-0.5 rounded font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+                title="Switch or manage workspaces"
+                aria-label="Switch or manage workspaces"
+              >
+                <span>Workspaces</span>
+                <ChevronDown className="w-3 h-3 shrink-0 opacity-70" />
+              </button>
+            </>
+          )
+        )}
+
+        {fileName !== 'No file open' && (
+          <>
+            <span className="text-[#e5e3dc] dark:text-[#282b33] hidden sm:inline">/</span>
+
+            {/* Editable File Name */}
+            {isEditingName ? (
+              <form onSubmit={handleNameSubmit} className="flex items-center">
+                <input
+                  type="text"
+                  autoFocus
+                  value={tempName}
+                  onChange={e => setTempName(e.target.value)}
+                  onBlur={handleNameSubmit}
+                  className="px-2 py-0.5 text-xs font-mono rounded border border-[#2d6a4f] dark:border-[#52b788] bg-transparent text-[#191b1f] dark:text-[#eceef2] focus:outline-none"
+                />
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setTempName(fileName);
+                  setIsEditingName(true);
+                }}
+                className="text-xs font-mono font-medium truncate max-w-[90px] sm:max-w-[180px] md:max-w-[240px] hover:underline text-left text-[#191b1f] dark:text-[#eceef2]"
+                title="Click to rename file"
+              >
+                {fileName}
+              </button>
+            )}
+
+            {/* Save Status */}
+            <div className="ml-1 sm:ml-2">{renderStatusBadge()}</div>
           </>
         )}
-
-        <span className="text-[#e5e3dc] dark:text-[#282b33] hidden sm:inline">/</span>
-
-        {/* Editable File Name */}
-        {isEditingName ? (
-          <form onSubmit={handleNameSubmit} className="flex items-center">
-            <input
-              type="text"
-              autoFocus
-              value={tempName}
-              onChange={e => setTempName(e.target.value)}
-              onBlur={handleNameSubmit}
-              className="px-2 py-0.5 text-xs font-mono rounded border border-[#2d6a4f] dark:border-[#52b788] bg-transparent text-[#191b1f] dark:text-[#eceef2] focus:outline-none"
-            />
-          </form>
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              setTempName(fileName);
-              setIsEditingName(true);
-            }}
-            className="text-xs font-mono font-medium truncate max-w-[110px] sm:max-w-[180px] md:max-w-[240px] hover:underline text-left text-[#191b1f] dark:text-[#eceef2]"
-            title="Click to rename file"
-          >
-            {fileName}
-          </button>
-        )}
-
-        {/* Save Status */}
-        <div className="ml-1 sm:ml-2">{renderStatusBadge()}</div>
       </div>
 
       {/* Action Controls */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         {/* Workspace & File Actions */}
         <button
           type="button"
@@ -202,6 +241,18 @@ export const Header: React.FC<HeaderProps> = ({
           <FolderOpen className="w-3.5 h-3.5 text-[#2d6a4f] dark:text-[#52b788]" />
           <span className="hidden md:inline">Open Folder</span>
         </button>
+
+        {onCreateNewWorkspace && (
+          <button
+            type="button"
+            onClick={onCreateNewWorkspace}
+            className="hidden sm:inline-flex p-1.5 rounded text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] hover:bg-black/5 dark:hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+            title="Create New Workspace"
+            aria-label="New Workspace"
+          >
+            <FolderPlus className="w-4 h-4" />
+          </button>
+        )}
 
         <button
           type="button"
@@ -216,7 +267,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={onSaveFile}
-          className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded bg-[#2d6a4f] hover:bg-[#24553f] dark:bg-[#52b788] dark:hover:bg-[#429d73] text-white dark:text-[#111215] transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+          className="flex items-center gap-1 px-2 py-1 sm:px-2.5 text-xs font-medium rounded bg-[#2d6a4f] hover:bg-[#24553f] dark:bg-[#52b788] dark:hover:bg-[#429d73] text-white dark:text-[#111215] transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
           title="Save file directly to disk (Ctrl+S)"
           aria-label="Save file"
         >
@@ -227,7 +278,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={onExportFile}
-          className="p-1.5 rounded text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] hover:bg-black/5 dark:hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+          className="hidden sm:inline-flex p-1.5 rounded text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] hover:bg-black/5 dark:hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
           title="Export Markdown (.md)"
           aria-label="Export Markdown file"
         >
@@ -252,7 +303,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={onToggleZenMode}
-          className={`p-1.5 rounded transition-colors ${
+          className={`hidden sm:inline-flex p-1.5 rounded transition-colors ${
             isZenMode
               ? 'bg-[#2d6a4f]/15 text-[#2d6a4f] dark:bg-[#52b788]/20 dark:text-[#52b788]'
               : 'text-[#59606d] dark:text-[#9ba2b0] hover:bg-black/5 dark:hover:bg-white/5'
@@ -281,7 +332,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={onOpenShortcuts}
-          className="p-1.5 rounded text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] hover:bg-black/5 dark:hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+          className="hidden md:inline-flex p-1.5 rounded text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] hover:bg-black/5 dark:hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
           title="Keyboard shortcuts & guide"
           aria-label="Keyboard shortcuts"
         >

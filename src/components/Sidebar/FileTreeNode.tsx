@@ -9,6 +9,7 @@ import {
   Trash2,
   Edit2,
   FilePlus,
+  FolderPlus,
 } from 'lucide-react';
 
 interface FileTreeNodeProps {
@@ -17,6 +18,7 @@ interface FileTreeNodeProps {
   activeFileId: string | null;
   onSelectFile: (node: TreeNodeType) => void;
   onCreateFileInDir: (dirHandle: FileSystemDirectoryHandle) => void;
+  onCreateFolderInDir?: (dirHandle: FileSystemDirectoryHandle) => void;
   onDeleteNode: (parentHandle: FileSystemDirectoryHandle, name: string) => void;
   onRenameNode: (
     parentHandle: FileSystemDirectoryHandle,
@@ -32,6 +34,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   activeFileId,
   onSelectFile,
   onCreateFileInDir,
+  onCreateFolderInDir,
   onDeleteNode,
   onRenameNode,
 }) => {
@@ -71,6 +74,14 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     e.stopPropagation();
     if (isDirectory) {
       onCreateFileInDir(node.handle as FileSystemDirectoryHandle);
+      setIsExpanded(true);
+    }
+  };
+
+  const handleNewFolder = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isDirectory && onCreateFolderInDir) {
+      onCreateFolderInDir(node.handle as FileSystemDirectoryHandle);
       setIsExpanded(true);
     }
   };
@@ -149,15 +160,28 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
         {!isEditing && (
           <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
             {isDirectory && (
-              <button
-                type="button"
-                onClick={handleNewFile}
-                className="p-1 rounded text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] hover:bg-black/5 dark:hover:bg-white/5"
-                title="New file in this folder"
-                aria-label="New file in this folder"
-              >
-                <FilePlus className="w-3 h-3" />
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleNewFile}
+                  className="p-1 rounded text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] hover:bg-black/5 dark:hover:bg-white/5"
+                  title="New file in this folder"
+                  aria-label="New file in this folder"
+                >
+                  <FilePlus className="w-3 h-3" />
+                </button>
+                {onCreateFolderInDir && (
+                  <button
+                    type="button"
+                    onClick={handleNewFolder}
+                    className="p-1 rounded text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] hover:bg-black/5 dark:hover:bg-white/5"
+                    title="New folder in this folder"
+                    aria-label="New folder in this folder"
+                  >
+                    <FolderPlus className="w-3 h-3" />
+                  </button>
+                )}
+              </>
             )}
             {!isDirectory && (
               <button
@@ -195,6 +219,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
                 activeFileId={activeFileId}
                 onSelectFile={onSelectFile}
                 onCreateFileInDir={onCreateFileInDir}
+                onCreateFolderInDir={onCreateFolderInDir}
                 onDeleteNode={onDeleteNode}
                 onRenameNode={onRenameNode}
               />

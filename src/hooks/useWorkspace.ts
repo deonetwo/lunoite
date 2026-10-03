@@ -1,10 +1,14 @@
 import { useState, useCallback, useEffect } from 'react';
-import { FileTreeNode, WorkspaceState } from '../types/workspace';
+import { FileTreeNode, WorkspaceState, RecentWorkspace } from '../types/workspace';
 import {
   saveDirectoryHandle,
   getDirectoryHandle,
   clearDirectoryHandle,
   verifyHandlePermission,
+  recordRecentWorkspace,
+  getRecentWorkspaces,
+  removeRecentWorkspace,
+  clearAllRecentWorkspaces,
 } from '../lib/indexedDb';
 
 const WORKSPACE_STORAGE_KEY = 'lunoite_active_workspace';
@@ -17,6 +21,10 @@ export function useWorkspace() {
     isLoading: false,
     error: null,
   });
+
+  const [recentWorkspaces, setRecentWorkspaces] = useState<RecentWorkspace[]>(() =>
+    getRecentWorkspaces()
+  );
 
   const isNativeSupported =
     typeof window !== 'undefined' && 'showDirectoryPicker' in window;
@@ -116,6 +124,8 @@ export function useWorkspace() {
       });
 
       await saveDirectoryHandle(WORKSPACE_STORAGE_KEY, rootHandle);
+      const updatedRecents = await recordRecentWorkspace(rootHandle);
+      setRecentWorkspaces(updatedRecents);
       const tree = await scanDirectory(rootHandle);
 
       setWorkspace({
@@ -142,6 +152,152 @@ export function useWorkspace() {
     }
   }, [isNativeSupported, scanDirectory]);
 
+  // Open a previously saved workspace from recent history
+  const openRecentWorkspace = useCallback(
+    async (recent: RecentWorkspace): Promise<boolean> => {
+      try {
+        setWorkspace(prev => ({ ...prev, isLoading: true, error: null }));
+
+        let handle = await getDirectoryHandle(recent.handleKey);
+        if (!handle) {
+          handle = await getDirectoryHandle(WORKSPACE_STORAGE_KEY);
+        }
+
+        if (!handle) {
+          setWorkspace(prev => ({
+            ...prev,
+            isLoading: false,
+            error: 'Workspace folder handle is no longer stored.',
+          }));
+          return false;
+        }
+
+        const hasPermission = await verifyHandlePermission(handle, true);
+        if (!hasPermission) {
+          setWorkspace(prev => ({
+            ...prev,
+            isLoading: false,
+            error: 'Permission to access workspace folder was denied.',
+          }));
+          return false;
+        }
+
+        await saveDirectoryHandle(WORKSPACE_STORAGE_KEY, handle);
+        const updatedRecents = await recordRecentWorkspace(handle);
+        setRecentWorkspaces(updatedRecents);
+
+        const tree = await scanDirectory(handle);
+        setWorkspace({
+          rootHandle: handle,
+          name: handle.name,
+          tree,
+          isLoading: false,
+          error: null,
+        });
+
+        return true;
+      } catch (err: unknown) {
+        if ((err as Error).name === 'AbortError') {
+          setWorkspace(prev => ({ ...prev, isLoading: false }));
+          return false;
+        }
+        console.error('Error opening recent workspace:', err);
+        setWorkspace(prev => ({
+          ...prev,
+          isLoading: false,
+          error: 'Failed to open recent workspace.',
+        }));
+        return false;
+      }
+    },
+    [scanDirectory]
+  );
+
+  // Create a brand new workspace folder on disk
+  const createNewWorkspace = useCallback(
+    async (
+      name: string,
+      initialNoteTitle = 'Welcome.md',
+      initialNoteContent?: string
+    ): Promise<FileSystemDirectoryHandle | null> => {
+      if (!isNativeSupported) {
+        alert(
+          'Directory Picker API is not supported in this browser. Please use Chrome, Edge, or a Chromium-based browser.'
+        );
+        return null;
+      }
+
+      try {
+        setWorkspace(prev => ({ ...prev, isLoading: true, error: null }));
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const parentHandle = await (window as any).showDirectoryPicker({
+          mode: 'readwrite',
+        });
+
+        const cleanName = name.trim();
+        const workspaceHandle = await parentHandle.getDirectoryHandle(cleanName, {
+          create: true,
+        });
+
+        if (initialNoteTitle && initialNoteTitle.trim()) {
+          const noteName = initialNoteTitle.trim().endsWith('.md')
+            ? initialNoteTitle.trim()
+            : `${initialNoteTitle.trim()}.md`;
+          const noteHandle = await workspaceHandle.getFileHandle(noteName, {
+            create: true,
+          });
+          const writable = await noteHandle.createWritable();
+          const starterContent =
+            initialNoteContent ??
+            `# ${cleanName}\n\nWelcome to your new Lunoite workspace. Start writing your notes or STAR stories here.\n`;
+          await writable.write(starterContent);
+          await writable.close();
+        }
+
+        await saveDirectoryHandle(WORKSPACE_STORAGE_KEY, workspaceHandle);
+        const updatedRecents = await recordRecentWorkspace(workspaceHandle);
+        setRecentWorkspaces(updatedRecents);
+
+        const tree = await scanDirectory(workspaceHandle);
+        setWorkspace({
+          rootHandle: workspaceHandle,
+          name: workspaceHandle.name,
+          tree,
+          isLoading: false,
+          error: null,
+        });
+
+        return workspaceHandle;
+      } catch (err: unknown) {
+        if ((err as Error).name === 'AbortError') {
+          setWorkspace(prev => ({ ...prev, isLoading: false }));
+          return null;
+        }
+        console.error('Error creating workspace:', err);
+        setWorkspace(prev => ({
+          ...prev,
+          isLoading: false,
+          error: 'Failed to create workspace.',
+        }));
+        return null;
+      }
+    },
+    [isNativeSupported, scanDirectory]
+  );
+
+  // Remove a recent workspace from history
+  const removeRecent = useCallback(async (id: string) => {
+    const updated = await removeRecentWorkspace(id);
+    setRecentWorkspaces(updated);
+  }, []);
+
+  // Clear all recent workspace history
+  const clearRecent = useCallback(async () => {
+    const updated = await clearAllRecentWorkspaces();
+    setRecentWorkspaces(updated);
+  }, []);
+
   // Close active workspace
   const closeWorkspace = useCallback(async () => {
     await clearDirectoryHandle(WORKSPACE_STORAGE_KEY);
@@ -158,6 +314,7 @@ export function useWorkspace() {
   useEffect(() => {
     async function restore() {
       try {
+        setRecentWorkspaces(getRecentWorkspaces());
         const savedHandle = await getDirectoryHandle(WORKSPACE_STORAGE_KEY);
         if (!savedHandle) return;
 
@@ -171,6 +328,8 @@ export function useWorkspace() {
             isLoading: false,
             error: null,
           });
+          const updated = await recordRecentWorkspace(savedHandle);
+          setRecentWorkspaces(updated);
         }
       } catch (err) {
         console.warn('Could not automatically restore workspace:', err);
@@ -313,8 +472,13 @@ export function useWorkspace() {
 
   return {
     workspace,
+    recentWorkspaces,
     isNativeSupported,
     openWorkspace,
+    openRecentWorkspace,
+    createNewWorkspace,
+    removeRecent,
+    clearRecent,
     closeWorkspace,
     refreshTree,
     readFile,

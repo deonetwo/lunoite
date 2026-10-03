@@ -31,3 +31,10 @@ export interface WorkspaceState {
   isLoading: boolean;
   error: string | null;
 }
+
+export interface RecentWorkspace {
+  id: string;
+  name: string;
+  lastOpened: number;
+  handleKey: string;
+}

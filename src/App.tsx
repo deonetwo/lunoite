@@ -14,13 +14,15 @@ import { ReferenceShelf } from './components/Shelf/ReferenceShelf';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { WelcomeWorkspace } from './components/Workspace/WelcomeWorkspace';
 import { WorkspaceSearchModal } from './components/Workspace/WorkspaceSearchModal';
+import { NewWorkspaceModal } from './components/Workspace/NewWorkspaceModal';
+import { RecentWorkspacesModal } from './components/Workspace/RecentWorkspacesModal';
 import { scrollToActiveMatch } from './lib/searchHighlightExtension';
 
 import { computeStats, downloadMarkdownFile } from './lib/markdown';
 import { INITIAL_CARDS } from './lib/defaultCards';
 import { ReferenceCard } from './types/shelf';
 import { DocumentStats, SaveStatus } from './types/editor';
-import { FileTreeNode } from './types/workspace';
+import { FileTreeNode, RecentWorkspace } from './types/workspace';
 import { SearchMatch } from './types/search';
 
 export const App: React.FC = () => {
@@ -29,8 +31,13 @@ export const App: React.FC = () => {
   // Workspace state & operations
   const {
     workspace,
+    recentWorkspaces,
     isNativeSupported,
     openWorkspace,
+    openRecentWorkspace,
+    createNewWorkspace,
+    removeRecent,
+    clearRecent,
     closeWorkspace,
     refreshTree,
     readFile,
@@ -51,6 +58,7 @@ export const App: React.FC = () => {
     closeTab,
     updateTabContent,
     markTabClean,
+    closeAllTabs,
   } = useTabs();
 
   // Reference shelf cards (stored in localStorage)
@@ -69,6 +77,8 @@ export const App: React.FC = () => {
   const [isZenMode, setIsZenMode] = useState<boolean>(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false);
+  const [isRecentWorkspacesOpen, setIsRecentWorkspacesOpen] = useState<boolean>(false);
+  const [isNewWorkspaceOpen, setIsNewWorkspaceOpen] = useState<boolean>(false);
   const [isFindBarOpen, setIsFindBarOpen] = useState<boolean>(false);
   const [editorSearchQuery, setEditorSearchQuery] = useState<string | undefined>(undefined);
   const [clipText, setClipText] = useState<string | undefined>(undefined);
@@ -327,13 +337,80 @@ export const App: React.FC = () => {
     );
   }, [openTab]);
 
+  // Workspace Switch and Creation Handlers
+  const handleOpenWorkspace = useCallback(async () => {
+    closeAllTabs();
+    await openWorkspace();
+  }, [closeAllTabs, openWorkspace]);
+
+  const handleSelectRecentWorkspace = useCallback(
+    async (recent: RecentWorkspace) => {
+      closeAllTabs();
+      await openRecentWorkspace(recent);
+    },
+    [closeAllTabs, openRecentWorkspace]
+  );
+
+  const handleCreateWorkspace = useCallback(
+    async (
+      name: string,
+      initialNoteTitle?: string,
+      initialNoteContent?: string
+    ): Promise<FileSystemDirectoryHandle | null> => {
+      closeAllTabs();
+      const handle = await createNewWorkspace(
+        name,
+        initialNoteTitle,
+        initialNoteContent
+      );
+      if (handle && initialNoteTitle) {
+        try {
+          const cleanName = initialNoteTitle.trim().endsWith('.md')
+            ? initialNoteTitle.trim()
+            : `${initialNoteTitle.trim()}.md`;
+          const fileHandle = await handle.getFileHandle(cleanName);
+          const content = await readFile(fileHandle);
+          const node: FileTreeNode = {
+            id: cleanName,
+            name: cleanName,
+            path: cleanName,
+            kind: 'file',
+            handle: fileHandle,
+            parentHandle: handle,
+            extension: 'md',
+          };
+          openTab(node, content);
+        } catch (err) {
+          console.warn('Could not automatically open starter note:', err);
+        }
+      }
+      return handle;
+    },
+    [closeAllTabs, createNewWorkspace, readFile, openTab]
+  );
+
+  const handleCloseWorkspace = useCallback(async () => {
+    closeAllTabs();
+    await closeWorkspace();
+  }, [closeAllTabs, closeWorkspace]);
+
   // Global application shortcuts
   useEffect(() => {
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
       // Ctrl+O: Open workspace folder
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'o') {
         e.preventDefault();
-        openWorkspace();
+        handleOpenWorkspace();
+      }
+      // Ctrl+Shift+O: Open workspace history
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        setIsRecentWorkspacesOpen(true);
+      }
+      // Ctrl+Alt+N: Create new workspace
+      if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        setIsNewWorkspaceOpen(true);
       }
       // Ctrl+Shift+F: Search workspace text
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
@@ -370,7 +447,7 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
-  }, [openWorkspace, isZenMode, sidebarTab]);
+  }, [handleOpenWorkspace, isZenMode, sidebarTab]);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#f8f7f4] dark:bg-[#111215] text-[#191b1f] dark:text-[#eceef2] font-sans antialiased transition-colors duration-200">
@@ -389,7 +466,9 @@ export const App: React.FC = () => {
           }
         }}
         saveStatus={saveStatus}
-        onOpenWorkspace={openWorkspace}
+        onOpenWorkspace={handleOpenWorkspace}
+        onCreateNewWorkspace={() => setIsNewWorkspaceOpen(true)}
+        onOpenRecentWorkspaces={() => setIsRecentWorkspacesOpen(true)}
         onNewFile={() => {
           if (workspace.rootHandle) {
             handleCreateFile(workspace.rootHandle, 'untitled.md');
@@ -438,7 +517,7 @@ export const App: React.FC = () => {
             onDeleteNode={handleDeleteNode}
             onRenameNode={handleRenameNode}
             onRefresh={refreshTree}
-            onCloseWorkspace={closeWorkspace}
+            onCloseWorkspace={handleCloseWorkspace}
             readFile={readFile}
             openTabs={tabs}
             activeSidebarTab={sidebarTab}
@@ -493,9 +572,13 @@ export const App: React.FC = () => {
             </div>
           ) : (
             <WelcomeWorkspace
-              onOpenWorkspace={openWorkspace}
+              onOpenWorkspace={handleOpenWorkspace}
+              onCreateWorkspace={() => setIsNewWorkspaceOpen(true)}
               onOpenScratchpad={handleOpenScratchpad}
               isNativeSupported={isNativeSupported}
+              recentWorkspaces={recentWorkspaces}
+              onSelectRecent={handleSelectRecentWorkspace}
+              onRemoveRecent={removeRecent}
             />
           )}
         </main>
@@ -539,6 +622,26 @@ export const App: React.FC = () => {
         openTabs={tabs}
         onSelectMatch={handleSelectFile}
         workspaceName={workspace.name || undefined}
+      />
+
+      {/* Create New Workspace Modal */}
+      <NewWorkspaceModal
+        isOpen={isNewWorkspaceOpen}
+        onClose={() => setIsNewWorkspaceOpen(false)}
+        onCreateWorkspace={handleCreateWorkspace}
+      />
+
+      {/* Workspace History / Recent Workspaces Modal */}
+      <RecentWorkspacesModal
+        isOpen={isRecentWorkspacesOpen}
+        onClose={() => setIsRecentWorkspacesOpen(false)}
+        recentWorkspaces={recentWorkspaces}
+        activeWorkspaceName={workspace.name || undefined}
+        onSelectRecent={handleSelectRecentWorkspace}
+        onRemoveRecent={removeRecent}
+        onClearAllRecent={clearRecent}
+        onOpenOtherWorkspace={handleOpenWorkspace}
+        onCreateNewWorkspace={() => setIsNewWorkspaceOpen(true)}
       />
     </div>
   );

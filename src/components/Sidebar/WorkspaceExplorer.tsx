@@ -259,7 +259,7 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
           {isNewFilePromptOpen && (
             <form onSubmit={handleCreateFileSubmit} className="p-2 bg-[#f8f7f4] dark:bg-[#111215] border-b border-[#e5e3dc] dark:border-[#282b33]">
               <label className="block text-[10px] font-medium text-[#59606d] dark:text-[#9ba2b0] mb-1">
-                New File Name:
+                New File in {targetDirHandle?.name || 'workspace'}:
               </label>
               <div className="flex gap-1">
                 <input
@@ -268,18 +268,22 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
                   placeholder="notes.md"
                   value={newEntryName}
                   onChange={e => setNewEntryName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') setIsNewFilePromptOpen(false);
+                  }}
                   className="flex-1 px-2 py-1 text-xs rounded border border-[#2d6a4f] dark:border-[#52b788] bg-transparent text-[#191b1f] dark:text-[#eceef2] focus:outline-none"
                 />
                 <button
                   type="submit"
-                  className="px-2 py-1 text-xs font-medium rounded bg-[#2d6a4f] text-white dark:bg-[#52b788] dark:text-[#111215]"
+                  className="px-2 py-1 text-xs font-medium rounded bg-[#2d6a4f] text-white dark:bg-[#52b788] dark:text-[#111215] focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
                 >
                   Add
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsNewFilePromptOpen(false)}
-                  className="px-1.5 py-1 text-xs rounded hover:bg-black/5 dark:hover:bg-white/5"
+                  className="px-1.5 py-1 text-xs rounded hover:bg-black/5 dark:hover:bg-white/5 text-[#59606d] dark:text-[#9ba2b0]"
+                  aria-label="Cancel new file"
                 >
                   ✕
                 </button>
@@ -291,7 +295,7 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
           {isNewFolderPromptOpen && (
             <form onSubmit={handleCreateFolderSubmit} className="p-2 bg-[#f8f7f4] dark:bg-[#111215] border-b border-[#e5e3dc] dark:border-[#282b33]">
               <label className="block text-[10px] font-medium text-[#59606d] dark:text-[#9ba2b0] mb-1">
-                New Folder Name:
+                New Folder in {targetDirHandle?.name || 'workspace'}:
               </label>
               <div className="flex gap-1">
                 <input
@@ -300,18 +304,22 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
                   placeholder="documentation"
                   value={newEntryName}
                   onChange={e => setNewEntryName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') setIsNewFolderPromptOpen(false);
+                  }}
                   className="flex-1 px-2 py-1 text-xs rounded border border-[#2d6a4f] dark:border-[#52b788] bg-transparent text-[#191b1f] dark:text-[#eceef2] focus:outline-none"
                 />
                 <button
                   type="submit"
-                  className="px-2 py-1 text-xs font-medium rounded bg-[#2d6a4f] text-white dark:bg-[#52b788] dark:text-[#111215]"
+                  className="px-2 py-1 text-xs font-medium rounded bg-[#2d6a4f] text-white dark:bg-[#52b788] dark:text-[#111215] focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
                 >
                   Add
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsNewFolderPromptOpen(false)}
-                  className="px-1.5 py-1 text-xs rounded hover:bg-black/5 dark:hover:bg-white/5"
+                  className="px-1.5 py-1 text-xs rounded hover:bg-black/5 dark:hover:bg-white/5 text-[#59606d] dark:text-[#9ba2b0]"
+                  aria-label="Cancel new folder"
                 >
                   ✕
                 </button>
@@ -329,6 +337,7 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
                   activeFileId={activeFileId}
                   onSelectFile={onSelectFile}
                   onCreateFileInDir={dirHandle => handleOpenNewFilePrompt(dirHandle)}
+                  onCreateFolderInDir={dirHandle => handleOpenNewFolderPrompt(dirHandle)}
                   onDeleteNode={onDeleteNode}
                   onRenameNode={onRenameNode}
                 />
