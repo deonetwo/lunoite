@@ -17,11 +17,13 @@ export interface OpenTab {
   id: string; // matches node.id or file path
   name: string;
   path: string;
-  handle: FileSystemFileHandle;
+  handle?: FileSystemFileHandle | null;
   parentDirHandle?: FileSystemDirectoryHandle;
   content: string;
   isDirty: boolean;
   lastSavedAt: number;
+  nativePath?: string;
+  isSingleFile?: boolean;
 }
 
 export interface WorkspaceState {

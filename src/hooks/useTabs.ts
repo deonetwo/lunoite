@@ -7,26 +7,35 @@ export function useTabs() {
 
   const activeTab = tabs.find(t => t.id === activeTabId) || null;
 
-  const openTab = useCallback((node: FileTreeNode, content: string) => {
-    setTabs(prev => {
-      const existing = prev.find(t => t.id === node.id);
-      if (existing) {
-        return prev;
-      }
-      const newTab: OpenTab = {
-        id: node.id,
-        name: node.name,
-        path: node.path,
-        handle: node.handle as FileSystemFileHandle,
-        parentDirHandle: node.parentHandle,
-        content,
-        isDirty: false,
-        lastSavedAt: Date.now(),
-      };
-      return [...prev, newTab];
-    });
-    setActiveTabId(node.id);
-  }, []);
+  const openTab = useCallback(
+    (
+      node: FileTreeNode,
+      content: string,
+      options?: { nativePath?: string; isSingleFile?: boolean }
+    ) => {
+      setTabs(prev => {
+        const existing = prev.find(t => t.id === node.id);
+        if (existing) {
+          return prev;
+        }
+        const newTab: OpenTab = {
+          id: node.id,
+          name: node.name,
+          path: node.path,
+          handle: (node.handle as FileSystemFileHandle) || null,
+          parentDirHandle: node.parentHandle,
+          content,
+          isDirty: false,
+          lastSavedAt: Date.now(),
+          nativePath: options?.nativePath,
+          isSingleFile: options?.isSingleFile,
+        };
+        return [...prev, newTab];
+      });
+      setActiveTabId(node.id);
+    },
+    []
+  );
 
   const closeTab = useCallback((tabId: string) => {
     setTabs(prev => {

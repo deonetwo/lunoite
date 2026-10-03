@@ -32,7 +32,7 @@ export function useWorkspaceSearch({
           name: tab.name,
           path: tab.path,
           kind: 'file',
-          handle: tab.handle,
+          handle: (tab.handle || {}) as FileSystemFileHandle,
           extension: tab.name.split('.').pop() || 'md',
         });
       }

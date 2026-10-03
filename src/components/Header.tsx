@@ -27,6 +27,7 @@ interface HeaderProps {
   fileName: string;
   onRename: (newName: string) => void;
   saveStatus: SaveStatus;
+  onOpenFile?: () => void;
   onOpenWorkspace: () => void;
   onCreateNewWorkspace?: () => void;
   onOpenRecentWorkspaces?: () => void;
@@ -51,6 +52,7 @@ export const Header: React.FC<HeaderProps> = ({
   fileName,
   onRename,
   saveStatus,
+  onOpenFile,
   onOpenWorkspace,
   onCreateNewWorkspace,
   onOpenRecentWorkspaces,
@@ -231,11 +233,24 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Action Controls */}
       <div className="flex items-center gap-1 shrink-0">
         {/* Workspace & File Actions */}
+        {onOpenFile && (
+          <button
+            type="button"
+            onClick={onOpenFile}
+            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded border border-[#e5e3dc] dark:border-[#282b33] hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+            title="Open Markdown File (Ctrl+O)"
+            aria-label="Open Markdown File"
+          >
+            <FileText className="w-3.5 h-3.5 text-[#2d6a4f] dark:text-[#52b788]" />
+            <span className="hidden md:inline">Open File</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={onOpenWorkspace}
-          className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded border border-[#e5e3dc] dark:border-[#282b33] hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
-          title="Open Workspace Folder (Ctrl+O)"
+          className="hidden sm:flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded border border-[#e5e3dc] dark:border-[#282b33] hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+          title="Open Workspace Folder (Ctrl+Alt+O)"
           aria-label="Open Workspace Folder"
         >
           <FolderOpen className="w-3.5 h-3.5 text-[#2d6a4f] dark:text-[#52b788]" />

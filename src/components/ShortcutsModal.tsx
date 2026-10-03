@@ -31,7 +31,8 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
 
   const shortcuts = [
     { key: 'Ctrl + S', desc: 'Save changes to local file' },
-    { key: 'Ctrl + O', desc: 'Open file or workspace folder' },
+    { key: 'Ctrl + O', desc: 'Open single Markdown file' },
+    { key: 'Ctrl + Alt + O', desc: 'Open workspace folder' },
     { key: 'Ctrl + Shift + O', desc: 'Workspace history & switch' },
     { key: 'Ctrl + Alt + N', desc: 'Create new workspace' },
     { key: 'Ctrl + Shift + F', desc: 'Search text across workspace' },

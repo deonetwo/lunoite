@@ -4,6 +4,7 @@ import { RecentWorkspace } from '../../types/workspace';
 import { formatRelativeTime } from '../../lib/formatDate';
 
 interface WelcomeWorkspaceProps {
+  onOpenFile: () => void;
   onOpenWorkspace: () => void;
   onCreateWorkspace: () => void;
   onOpenScratchpad: () => void;
@@ -14,6 +15,7 @@ interface WelcomeWorkspaceProps {
 }
 
 export const WelcomeWorkspace: React.FC<WelcomeWorkspaceProps> = ({
+  onOpenFile,
   onOpenWorkspace,
   onCreateWorkspace,
   onOpenScratchpad,
@@ -31,20 +33,31 @@ export const WelcomeWorkspace: React.FC<WelcomeWorkspaceProps> = ({
 
         <div>
           <h1 className="font-serif text-2xl sm:text-3xl font-semibold tracking-tight text-[#191b1f] dark:text-[#eceef2] mb-2">
-            Open or Create a Workspace
+            Open or Create Notes
           </h1>
           <p className="text-xs sm:text-sm text-[#59606d] dark:text-[#9ba2b0] leading-relaxed">
-            Select a folder or create a new workspace to browse nested files, write Markdown with live WYSIWYG formatting, and auto-sync edits directly to your local drive.
+            Open an individual Markdown file, select a workspace folder, or create a new workspace to write notes with live WYSIWYG formatting.
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-1">
-          {isNativeSupported ? (
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1 flex-wrap">
+          <button
+            type="button"
+            onClick={onOpenFile}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium rounded-lg bg-[#2d6a4f] hover:bg-[#24553f] dark:bg-[#52b788] dark:hover:bg-[#429d73] text-white dark:text-[#111215] shadow-xs transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+            title="Open an individual Markdown file (Ctrl+O)"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Open File</span>
+          </button>
+
+          {isNativeSupported && (
             <>
               <button
                 type="button"
                 onClick={onOpenWorkspace}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium rounded-lg bg-[#2d6a4f] hover:bg-[#24553f] dark:bg-[#52b788] dark:hover:bg-[#429d73] text-white dark:text-[#111215] shadow-xs transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-lg border border-[#2d6a4f]/30 dark:border-[#52b788]/30 hover:bg-[#2d6a4f]/10 dark:hover:bg-[#52b788]/15 text-[#2d6a4f] dark:text-[#52b788] transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+                title="Open a workspace directory (Ctrl+Alt+O)"
               >
                 <FolderOpen className="w-4 h-4" />
                 <span>Open Folder</span>
@@ -53,27 +66,28 @@ export const WelcomeWorkspace: React.FC<WelcomeWorkspaceProps> = ({
               <button
                 type="button"
                 onClick={onCreateWorkspace}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium rounded-lg border border-[#2d6a4f]/30 dark:border-[#52b788]/30 hover:bg-[#2d6a4f]/10 dark:hover:bg-[#52b788]/15 text-[#2d6a4f] dark:text-[#52b788] transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-lg border border-[#e5e3dc] dark:border-[#282b33] hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+                title="Create a new workspace directory (Ctrl+Alt+N)"
               >
-                <FolderPlus className="w-4 h-4" />
+                <FolderPlus className="w-4 h-4 text-[#59606d] dark:text-[#9ba2b0]" />
                 <span>New Workspace</span>
               </button>
             </>
-          ) : (
-            <p className="text-xs text-amber-600 dark:text-amber-400">
-              Your browser does not support the File System Access API. Please use a Chromium-based browser (Chrome, Edge) for directory workspaces.
-            </p>
           )}
 
           <button
             type="button"
             onClick={onOpenScratchpad}
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-lg border border-[#e5e3dc] dark:border-[#282b33] hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+            title="Start writing quick notes without saving to disk"
           >
-            <FileText className="w-4 h-4 text-[#59606d] dark:text-[#9ba2b0]" />
             <span>Scratchpad</span>
           </button>
         </div>
+
+        <p className="text-[11px] text-[#59606d]/80 dark:text-[#9ba2b0]/80">
+          Drop any .md file here to open directly
+        </p>
 
         {/* Recent Workspaces section */}
         {recentWorkspaces.length > 0 && onSelectRecent && (
@@ -134,15 +148,15 @@ export const WelcomeWorkspace: React.FC<WelcomeWorkspaceProps> = ({
           </div>
         )}
 
-        <div className="pt-4 border-t border-[#e5e3dc] dark:border-[#282b33] flex items-center justify-center gap-4 text-xs text-[#59606d] dark:text-[#9ba2b0]">
+        <div className="pt-4 border-t border-[#e5e3dc] dark:border-[#282b33] flex items-center justify-center gap-3 text-[11px] text-[#59606d] dark:text-[#9ba2b0] flex-wrap">
           <span className="flex items-center gap-1.5">
             <Keyboard className="w-3.5 h-3.5" />
-            <span><kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 font-mono text-[10px]">Ctrl+O</kbd> Open</span>
+            <span><kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 font-mono text-[10px]">Ctrl+O</kbd> Open File</span>
           </span>
           <span>•</span>
-          <span className="flex items-center gap-1.5">
-            <span><kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 font-mono text-[10px]">Ctrl+S</kbd> Save to disk</span>
-          </span>
+          <span><kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 font-mono text-[10px]">Ctrl+Alt+O</kbd> Folder</span>
+          <span>•</span>
+          <span><kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 font-mono text-[10px]">Ctrl+S</kbd> Save</span>
         </div>
       </div>
     </div>

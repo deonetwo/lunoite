@@ -17,6 +17,7 @@ import { WorkspaceSearchModal } from './components/Workspace/WorkspaceSearchModa
 import { NewWorkspaceModal } from './components/Workspace/NewWorkspaceModal';
 import { RecentWorkspacesModal } from './components/Workspace/RecentWorkspacesModal';
 import { scrollToActiveMatch } from './lib/searchHighlightExtension';
+import { getTauriCliFile, readNativeFile, writeNativeFile } from './lib/tauri';
 
 import { computeStats, downloadMarkdownFile } from './lib/markdown';
 import { INITIAL_CARDS } from './lib/defaultCards';
@@ -83,6 +84,69 @@ export const App: React.FC = () => {
   const [editorSearchQuery, setEditorSearchQuery] = useState<string | undefined>(undefined);
   const [clipText, setClipText] = useState<string | undefined>(undefined);
   const [isSavingToDisk, setIsSavingToDisk] = useState<boolean>(false);
+
+  // Open single Markdown file from disk (independent of workspace folder)
+  const handleOpenSingleFile = useCallback(async () => {
+    if (typeof window !== 'undefined' && 'showOpenFilePicker' in window) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const handles = await (window as any).showOpenFilePicker({
+          types: [
+            {
+              description: 'Markdown Files',
+              accept: {
+                'text/markdown': ['.md', '.markdown'],
+                'text/plain': ['.txt'],
+              },
+            },
+          ],
+          multiple: true,
+        });
+        for (const handle of handles) {
+          const file = await handle.getFile();
+          const content = await file.text();
+          const tabId = `single:${file.name}:${Date.now()}`;
+          const node: FileTreeNode = {
+            id: tabId,
+            name: file.name,
+            path: file.name,
+            kind: 'file',
+            handle,
+            extension: file.name.split('.').pop() || 'md',
+          };
+          openTab(node, content, { isSingleFile: true });
+        }
+      } catch (err: unknown) {
+        if ((err as Error).name === 'AbortError') return;
+        console.error('Failed to open file via picker:', err);
+      }
+    } else {
+      // Fallback for browsers without File System Access API
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.md,.markdown,.txt,text/plain,text/markdown';
+      input.multiple = true;
+      input.onchange = async () => {
+        if (!input.files) return;
+        for (let i = 0; i < input.files.length; i++) {
+          const file = input.files[i];
+          const content = await file.text();
+          const tabId = `single:${file.name}:${Date.now()}`;
+          const node: FileTreeNode = {
+            id: tabId,
+            name: file.name,
+            path: file.name,
+            kind: 'file',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            handle: {} as any,
+            extension: file.name.split('.').pop() || 'md',
+          };
+          openTab(node, content, { isSingleFile: true });
+        }
+      };
+      input.click();
+    }
+  }, [openTab]);
 
   // Stats calculation
   const stats: DocumentStats = activeTab
@@ -177,7 +241,17 @@ export const App: React.FC = () => {
       saveTimeoutRef.current = null;
     }
 
-    if (activeTab.handle && typeof activeTab.handle.createWritable === 'function') {
+    if (activeTab.nativePath) {
+      setIsSavingToDisk(true);
+      try {
+        await writeNativeFile(activeTab.nativePath, activeTab.content);
+        markTabClean(activeTab.id);
+      } catch (err) {
+        console.error('Failed to save native file:', err);
+      } finally {
+        setIsSavingToDisk(false);
+      }
+    } else if (activeTab.handle && typeof activeTab.handle.createWritable === 'function') {
       setIsSavingToDisk(true);
       const success = await writeFile(activeTab.handle, activeTab.content);
       setIsSavingToDisk(false);
@@ -185,6 +259,7 @@ export const App: React.FC = () => {
         markTabClean(activeTab.id);
       }
     } else {
+      downloadMarkdownFile(activeTab.name, activeTab.content);
       markTabClean(activeTab.id);
     }
   }, [activeTab, writeFile, markTabClean]);
@@ -196,7 +271,23 @@ export const App: React.FC = () => {
 
       updateTabContent(activeTab.id, newMarkdown);
 
-      if (activeTab.handle && typeof activeTab.handle.createWritable === 'function') {
+      if (activeTab.nativePath) {
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+
+        saveTimeoutRef.current = window.setTimeout(async () => {
+          setIsSavingToDisk(true);
+          try {
+            await writeNativeFile(activeTab.nativePath!, newMarkdown);
+            markTabClean(activeTab.id);
+          } catch (err) {
+            console.error('Failed to auto-save native file:', err);
+          } finally {
+            setIsSavingToDisk(false);
+          }
+        }, 800);
+      } else if (activeTab.handle && typeof activeTab.handle.createWritable === 'function') {
         // Debounce auto-save directly to disk (~800ms)
         if (saveTimeoutRef.current) {
           clearTimeout(saveTimeoutRef.current);
@@ -204,7 +295,7 @@ export const App: React.FC = () => {
 
         saveTimeoutRef.current = window.setTimeout(async () => {
           setIsSavingToDisk(true);
-          const success = await writeFile(activeTab.handle, newMarkdown);
+          const success = await writeFile(activeTab.handle!, newMarkdown);
           setIsSavingToDisk(false);
           if (success) {
             markTabClean(activeTab.id);
@@ -394,16 +485,149 @@ export const App: React.FC = () => {
     await closeWorkspace();
   }, [closeAllTabs, closeWorkspace]);
 
+  // Startup: Check if opened via CLI in Tauri desktop mode
+  useEffect(() => {
+    async function checkCliFile() {
+      const cliPath = await getTauriCliFile();
+      if (cliPath) {
+        try {
+          const content = await readNativeFile(cliPath);
+          const fileName = cliPath.split(/[\\/]/).pop() || 'document.md';
+          const tabId = `native:${cliPath}`;
+          const node: FileTreeNode = {
+            id: tabId,
+            name: fileName,
+            path: fileName,
+            kind: 'file',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            handle: {} as any,
+            extension: fileName.split('.').pop() || 'md',
+          };
+          openTab(node, content, { nativePath: cliPath, isSingleFile: true });
+        } catch (err) {
+          console.error('Failed to open CLI file:', err);
+        }
+      }
+    }
+    checkCliFile();
+  }, [openTab]);
+
+  // Startup: Chromium PWA File Handling API (launchQueue)
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ('launchQueue' in window && (window as any).LaunchParams && 'files' in (window as any).LaunchParams.prototype) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).launchQueue.setConsumer(async (launchParams: any) => {
+        if (!launchParams.files || !launchParams.files.length) return;
+        for (const handle of launchParams.files) {
+          if (handle.kind === 'file') {
+            const file = await handle.getFile();
+            const content = await file.text();
+            const tabId = `single:${file.name}:${Date.now()}`;
+            const node: FileTreeNode = {
+              id: tabId,
+              name: file.name,
+              path: file.name,
+              kind: 'file',
+              handle,
+              extension: file.name.split('.').pop() || 'md',
+            };
+            openTab(node, content, { isSingleFile: true });
+          }
+        }
+      });
+    }
+  }, [openTab]);
+
+  // Window Drag & Drop support for single Markdown files
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    };
+
+    const handleDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      if (!e.dataTransfer) return;
+      const items = e.dataTransfer.items;
+      if (items && items.length > 0) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.kind === 'file') {
+            // Try to acquire direct read/write FileSystemHandle if supported
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            if (typeof (item as any).getAsFileSystemHandle === 'function') {
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const handle = await (item as any).getAsFileSystemHandle();
+                if (handle && handle.kind === 'file') {
+                  const file = await handle.getFile();
+                  if (file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt')) {
+                    const content = await file.text();
+                    const tabId = `single:${file.name}:${Date.now()}`;
+                    const node: FileTreeNode = {
+                      id: tabId,
+                      name: file.name,
+                      path: file.name,
+                      kind: 'file',
+                      handle,
+                      extension: file.name.split('.').pop() || 'md',
+                    };
+                    openTab(node, content, { isSingleFile: true });
+                    continue;
+                  }
+                }
+              } catch (err) {
+                console.warn('Could not read dropped file handle:', err);
+              }
+            }
+
+            // Fallback standard File
+            const file = item.getAsFile();
+            if (file && (file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt'))) {
+              const content = await file.text();
+              const tabId = `single:${file.name}:${Date.now()}`;
+              const node: FileTreeNode = {
+                id: tabId,
+                name: file.name,
+                path: file.name,
+                kind: 'file',
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                handle: {} as any,
+                extension: file.name.split('.').pop() || 'md',
+              };
+              openTab(node, content, { isSingleFile: true });
+            }
+          }
+        }
+      }
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, [openTab]);
+
   // Global application shortcuts
   useEffect(() => {
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
-      // Ctrl+O: Open workspace folder
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'o') {
+      // Ctrl+O: Open single file
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        handleOpenSingleFile();
+      }
+      // Ctrl+Alt+O: Open workspace folder
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.altKey && e.key.toLowerCase() === 'o') {
         e.preventDefault();
         handleOpenWorkspace();
       }
       // Ctrl+Shift+O: Open workspace history
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'o') {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') {
         e.preventDefault();
         setIsRecentWorkspacesOpen(true);
       }
@@ -447,7 +671,7 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
-  }, [handleOpenWorkspace, isZenMode, sidebarTab]);
+  }, [handleOpenSingleFile, handleOpenWorkspace, isZenMode, sidebarTab]);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#f8f7f4] dark:bg-[#111215] text-[#191b1f] dark:text-[#eceef2] font-sans antialiased transition-colors duration-200">
@@ -466,6 +690,7 @@ export const App: React.FC = () => {
           }
         }}
         saveStatus={saveStatus}
+        onOpenFile={handleOpenSingleFile}
         onOpenWorkspace={handleOpenWorkspace}
         onCreateNewWorkspace={() => setIsNewWorkspaceOpen(true)}
         onOpenRecentWorkspaces={() => setIsRecentWorkspacesOpen(true)}
@@ -499,7 +724,7 @@ export const App: React.FC = () => {
         onOpenShortcuts={() => setIsShortcutsOpen(true)}
         theme={theme}
         onToggleTheme={toggleTheme}
-        hasFileHandle={activeTab !== null && activeTab.handle !== undefined}
+        hasFileHandle={activeTab !== null && (activeTab.handle !== undefined || activeTab.nativePath !== undefined)}
       />
 
       {/* Main Workspace Area */}
@@ -572,6 +797,7 @@ export const App: React.FC = () => {
             </div>
           ) : (
             <WelcomeWorkspace
+              onOpenFile={handleOpenSingleFile}
               onOpenWorkspace={handleOpenWorkspace}
               onCreateWorkspace={() => setIsNewWorkspaceOpen(true)}
               onOpenScratchpad={handleOpenScratchpad}
@@ -603,7 +829,7 @@ export const App: React.FC = () => {
         fileName={activeTab ? activeTab.name : 'No file'}
         filePath={activeTab ? activeTab.path : undefined}
         workspaceName={workspace.name || undefined}
-        hasFileHandle={activeTab !== null && activeTab.handle !== undefined}
+        hasFileHandle={activeTab !== null && (activeTab.handle !== undefined || activeTab.nativePath !== undefined)}
         isZenMode={isZenMode}
       />
 
