@@ -79,7 +79,9 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
     editorProps: {
       attributes: {
         class: 'tiptap focus:outline-none max-w-none text-[#191b1f] dark:text-[#eceef2]',
-        spellcheck: 'true',
+        spellcheck: 'false',
+        autocorrect: 'off',
+        autocapitalize: 'off',
       },
     },
     onUpdate: ({ editor: ed }) => {
