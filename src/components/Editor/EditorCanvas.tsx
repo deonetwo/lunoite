@@ -133,10 +133,10 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
       {/* Centered Document Canvas (Paper Sheet) */}
       <div className="flex-1 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex justify-center">
         <div
-          className={`w-full max-w-3xl transition-all duration-300 ${
+          className={`w-full max-w-3xl rounded-lg px-6 sm:px-12 my-2 transition-[background-color,border-color,box-shadow,padding] duration-200 outline-none ${
             isZenMode
-              ? 'bg-transparent py-4 sm:py-8'
-              : 'bg-[#ffffff] dark:bg-[#17191e] border border-[#e5e3dc] dark:border-[#282b33] rounded-lg shadow-xs px-6 sm:px-12 py-8 sm:py-14 my-2'
+              ? 'bg-transparent border border-transparent shadow-none py-6 sm:py-10'
+              : 'bg-[#ffffff] dark:bg-[#17191e] border border-[#e5e3dc] dark:border-[#282b33] shadow-xs py-8 sm:py-14'
           }`}
         >
           <EditorContent editor={editor} />

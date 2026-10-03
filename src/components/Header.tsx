@@ -118,8 +118,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header
-      className={`border-b border-[#e5e3dc] dark:border-[#282b33] bg-[#ffffff] dark:bg-[#17191e] px-3 sm:px-4 py-2 transition-all ${
-        isZenMode ? 'opacity-0 hover:opacity-100 focus-within:opacity-100 h-11' : 'h-13'
+      className={`border-b border-[#e5e3dc] dark:border-[#282b33] bg-[#ffffff] dark:bg-[#17191e] px-3 sm:px-4 py-2 transition-opacity duration-200 h-12 ${
+        isZenMode ? 'opacity-0 hover:opacity-100 focus-within:opacity-100' : 'opacity-100'
       } flex items-center justify-between text-[#191b1f] dark:text-[#eceef2] select-none`}
     >
       {/* Brand, Workspace, and Document Name */}
