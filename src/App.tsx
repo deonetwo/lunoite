@@ -13,12 +13,15 @@ import { WorkspaceExplorer } from './components/Sidebar/WorkspaceExplorer';
 import { ReferenceShelf } from './components/Shelf/ReferenceShelf';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { WelcomeWorkspace } from './components/Workspace/WelcomeWorkspace';
+import { WorkspaceSearchModal } from './components/Workspace/WorkspaceSearchModal';
+import { scrollToActiveMatch } from './lib/searchHighlightExtension';
 
 import { computeStats, downloadMarkdownFile } from './lib/markdown';
 import { INITIAL_CARDS } from './lib/defaultCards';
 import { ReferenceCard } from './types/shelf';
 import { DocumentStats, SaveStatus } from './types/editor';
 import { FileTreeNode } from './types/workspace';
+import { SearchMatch } from './types/search';
 
 export const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
@@ -61,9 +64,13 @@ export const App: React.FC = () => {
   const saveTimeoutRef = useRef<number | null>(null);
 
   const [isExplorerOpen, setIsExplorerOpen] = useState<boolean>(true);
+  const [sidebarTab, setSidebarTab] = useState<'files' | 'search'>('files');
   const [isShelfOpen, setIsShelfOpen] = useState<boolean>(false);
   const [isZenMode, setIsZenMode] = useState<boolean>(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false);
+  const [isFindBarOpen, setIsFindBarOpen] = useState<boolean>(false);
+  const [editorSearchQuery, setEditorSearchQuery] = useState<string | undefined>(undefined);
   const [clipText, setClipText] = useState<string | undefined>(undefined);
   const [isSavingToDisk, setIsSavingToDisk] = useState<boolean>(false);
 
@@ -81,15 +88,74 @@ export const App: React.FC = () => {
         : 'saved'
       : 'local_only';
 
-  // Open file from explorer tree
+  // Open file from explorer tree or search results
   const handleSelectFile = useCallback(
-    async (node: FileTreeNode) => {
+    async (node: FileTreeNode, targetMatch?: SearchMatch, query?: string) => {
       if (node.kind === 'file') {
+        // Ensure in-document find bar is not open when clicking search results
+        setIsFindBarOpen(false);
+
         const content = await readFile(node.handle as FileSystemFileHandle);
         openTab(node, content);
+
+        const effectiveQuery =
+          query ||
+          (targetMatch && targetMatch.lineContent
+            ? targetMatch.lineContent.slice(
+                targetMatch.matchStartIndex,
+                targetMatch.matchEndIndex
+              )
+            : undefined);
+
+        if (effectiveQuery) {
+          setEditorSearchQuery(effectiveQuery);
+        }
+
+        // Reliably locate match in editor document and scroll directly into viewport center
+        const executeJump = () => {
+          if (!editorRef.current) return false;
+          const editor = editorRef.current;
+
+          if (effectiveQuery) {
+            editor.commands.jumpToMatch(
+              effectiveQuery,
+              false,
+              targetMatch?.matchIndex,
+              targetMatch?.lineContent
+            );
+          } else if (targetMatch) {
+            const doc = editor.state.doc;
+            const fullText = doc.textBetween(0, doc.content.size, '\n');
+            const lines = fullText.split('\n');
+            let offset = 0;
+            const lineIdx = Math.max(0, targetMatch.lineNumber - 1);
+            for (let i = 0; i < Math.min(lineIdx, lines.length); i++) {
+              offset += lines[i].length + 1;
+            }
+            const matchStart = offset + targetMatch.matchStartIndex;
+            const matchEnd = offset + targetMatch.matchEndIndex;
+            const safeFrom = Math.min(Math.max(1, matchStart + 1), doc.content.size);
+            const safeTo = Math.min(Math.max(safeFrom, matchEnd + 1), doc.content.size);
+            editor.commands.setTextSelection({ from: safeFrom, to: safeTo });
+          }
+
+          scrollToActiveMatch(10, 40);
+          return true;
+        };
+
+        const isAlreadyActiveTab = activeTabId === node.id;
+        if (isAlreadyActiveTab) {
+          // If already in the active document, jump immediately with 0ms delay
+          executeJump();
+        } else {
+          // Fire jump attempts after content has been rendered into the canvas
+          setTimeout(executeJump, 40);
+          setTimeout(executeJump, 120);
+          setTimeout(executeJump, 280);
+        }
       }
     },
-    [readFile, openTab]
+    [readFile, openTab, activeTabId]
   );
 
   // Save current active tab directly to disk
@@ -269,10 +335,22 @@ export const App: React.FC = () => {
         e.preventDefault();
         openWorkspace();
       }
+      // Ctrl+Shift+F: Search workspace text
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setIsFindBarOpen(false);
+        setIsSearchModalOpen(true);
+      }
       // Alt+E: Toggle explorer
       if (e.altKey && e.key.toLowerCase() === 'e') {
         e.preventDefault();
-        setIsExplorerOpen(prev => !prev);
+        setIsExplorerOpen(prev => {
+          const next = !prev;
+          if (next && sidebarTab === 'search') {
+            setIsFindBarOpen(false);
+          }
+          return next;
+        });
       }
       // Alt+S: Toggle Reference Shelf
       if (e.altKey && e.key.toLowerCase() === 's') {
@@ -292,7 +370,7 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
-  }, [openWorkspace, isZenMode]);
+  }, [openWorkspace, isZenMode, sidebarTab]);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#f8f7f4] dark:bg-[#111215] text-[#191b1f] dark:text-[#eceef2] font-sans antialiased transition-colors duration-200">
@@ -321,8 +399,20 @@ export const App: React.FC = () => {
         }}
         onSaveFile={handleSaveActiveTab}
         onExportFile={handleExport}
+        onOpenSearch={() => {
+          setIsFindBarOpen(false);
+          setIsSearchModalOpen(true);
+        }}
         isExplorerOpen={isExplorerOpen}
-        onToggleExplorer={() => setIsExplorerOpen(prev => !prev)}
+        onToggleExplorer={() =>
+          setIsExplorerOpen(prev => {
+            const next = !prev;
+            if (next && sidebarTab === 'search') {
+              setIsFindBarOpen(false);
+            }
+            return next;
+          })
+        }
         isZenMode={isZenMode}
         onToggleZenMode={() => setIsZenMode(prev => !prev)}
         isShelfOpen={isShelfOpen}
@@ -349,6 +439,15 @@ export const App: React.FC = () => {
             onRenameNode={handleRenameNode}
             onRefresh={refreshTree}
             onCloseWorkspace={closeWorkspace}
+            readFile={readFile}
+            openTabs={tabs}
+            activeSidebarTab={sidebarTab}
+            onTabChange={tab => {
+              setSidebarTab(tab);
+              if (tab === 'search') {
+                setIsFindBarOpen(false);
+              }
+            }}
           />
         )}
 
@@ -373,6 +472,14 @@ export const App: React.FC = () => {
               isZenMode={isZenMode}
               onEditorReady={ed => {
                 editorRef.current = ed as Editor;
+              }}
+              searchHighlightQuery={editorSearchQuery}
+              isFindBarOpen={isFindBarOpen}
+              onToggleFindBar={open => {
+                setIsFindBarOpen(open);
+                if (open) {
+                  setSidebarTab('files');
+                }
               }}
             />
           ) : workspace.rootHandle ? (
@@ -421,6 +528,17 @@ export const App: React.FC = () => {
       <ShortcutsModal
         isOpen={isShortcutsOpen}
         onClose={() => setIsShortcutsOpen(false)}
+      />
+
+      {/* Global Workspace Text Search Modal */}
+      <WorkspaceSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        tree={workspace.tree}
+        readFile={readFile}
+        openTabs={tabs}
+        onSelectMatch={handleSelectFile}
+        workspaceName={workspace.name || undefined}
       />
     </div>
   );

@@ -15,6 +15,7 @@ import {
   FileText,
   Sidebar,
   FilePlus,
+  Search,
 } from 'lucide-react';
 import { SaveStatus } from '../types/editor';
 import { Theme } from '../hooks/useTheme';
@@ -28,6 +29,7 @@ interface HeaderProps {
   onNewFile: () => void;
   onSaveFile: () => void;
   onExportFile: () => void;
+  onOpenSearch?: () => void;
   isExplorerOpen: boolean;
   onToggleExplorer: () => void;
   isZenMode: boolean;
@@ -49,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
   onNewFile,
   onSaveFile,
   onExportFile,
+  onOpenSearch,
   isExplorerOpen,
   onToggleExplorer,
   isZenMode,
@@ -230,6 +233,18 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Download className="w-4 h-4" />
         </button>
+
+        {onOpenSearch && (
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            className="p-1.5 rounded text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] hover:bg-black/5 dark:hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+            title="Search workspace text (Ctrl+Shift+F)"
+            aria-label="Search workspace text"
+          >
+            <Search className="w-4 h-4" />
+          </button>
+        )}
 
         <div className="w-[1px] h-4 bg-[#e5e3dc] dark:bg-[#282b33] mx-1 hidden sm:block" aria-hidden="true" />
 

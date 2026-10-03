@@ -32,6 +32,9 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
   const shortcuts = [
     { key: 'Ctrl + S', desc: 'Save changes to local file' },
     { key: 'Ctrl + O', desc: 'Open file or workspace' },
+    { key: 'Ctrl + Shift + F', desc: 'Search text across workspace' },
+    { key: 'Ctrl + F', desc: 'Find in active document' },
+    { key: 'Alt + E', desc: 'Toggle File Explorer sidebar' },
     { key: 'Alt + Z', desc: 'Toggle Zen focus mode' },
     { key: 'Alt + S', desc: 'Toggle Reference Shelf' },
     { key: 'Ctrl + B', desc: 'Bold text formatting' },
