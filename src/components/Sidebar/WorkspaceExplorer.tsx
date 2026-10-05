@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { FileTreeNode as TreeNodeType, WorkspaceState, OpenTab } from '../../types/workspace';
+import React, { useState, useEffect } from 'react';
+import { FileTreeNode as TreeNodeType, WorkspaceState, OpenTab, isMarkdownFile } from '../../types/workspace';
 import { SearchMatch } from '../../types/search';
 import { FileTreeNode } from './FileTreeNode';
 import { WorkspaceSearchResults } from '../Workspace/WorkspaceSearchResults';
@@ -14,6 +14,7 @@ import {
   FolderX,
   FolderTree,
   CaseSensitive,
+  Filter,
 } from 'lucide-react';
 
 interface WorkspaceExplorerProps {
@@ -69,6 +70,27 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
 
   // Quick file filter (for files tab)
   const [searchQuery, setSearchQuery] = useState('');
+  const [hideNonMarkdown, setHideNonMarkdown] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('lunoite_hide_non_markdown');
+      if (saved !== null) {
+        return saved === 'true';
+      }
+      return true;
+    } catch {
+      return true;
+    }
+  });
+
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('lunoite_hide_non_markdown', String(hideNonMarkdown));
+    } catch {
+      // ignore
+    }
+  }, [hideNonMarkdown]);
+
   const [isNewFilePromptOpen, setIsNewFilePromptOpen] = useState(false);
   const [isNewFolderPromptOpen, setIsNewFolderPromptOpen] = useState(false);
   const [newEntryName, setNewEntryName] = useState('');
@@ -122,24 +144,37 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
   };
 
   // Filter tree recursively for files tab
-  const filterNodes = (nodes: TreeNodeType[], query: string): TreeNodeType[] => {
-    if (!query.trim()) return nodes;
-    const lower = query.toLowerCase();
+  const filterNodes = (
+    nodes: TreeNodeType[],
+    query: string,
+    hideNonMd: boolean
+  ): TreeNodeType[] => {
+    const trimmed = query.trim().toLowerCase();
+    if (!trimmed && !hideNonMd) return nodes;
 
     return nodes.reduce<TreeNodeType[]>((acc, node) => {
-      if (node.name.toLowerCase().includes(lower)) {
-        acc.push(node);
-      } else if (node.kind === 'directory' && node.children) {
-        const filteredChildren = filterNodes(node.children, query);
-        if (filteredChildren.length > 0) {
+      if (node.kind === 'directory') {
+        const matchesDirName = trimmed ? node.name.toLowerCase().includes(trimmed) : false;
+        const childQuery = matchesDirName ? '' : query;
+        const filteredChildren = filterNodes(node.children || [], childQuery, hideNonMd);
+
+        if (filteredChildren.length > 0 || (matchesDirName && !hideNonMd)) {
           acc.push({ ...node, children: filteredChildren });
+        }
+      } else {
+        if (hideNonMd && !isMarkdownFile(node)) {
+          return acc;
+        }
+        if (!trimmed || node.name.toLowerCase().includes(trimmed)) {
+          acc.push(node);
         }
       }
       return acc;
     }, []);
   };
 
-  const displayedTree = filterNodes(workspace.tree, searchQuery);
+  const displayedTree = filterNodes(workspace.tree, searchQuery, hideNonMarkdown);
+
 
   return (
     <aside
@@ -241,19 +276,50 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
 
       {activeTab === 'files' ? (
         <>
-          {/* Instant File Name Filter */}
-          <div className="p-2 border-b border-[#e5e3dc] dark:border-[#282b33]">
-            <div className="relative">
-              <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-[#59606d] dark:text-[#9ba2b0]" />
+          {/* Instant File Name Filter & Type Toggle */}
+          <div className="p-2 border-b border-[#e5e3dc] dark:border-[#282b33] flex items-center gap-1.5">
+            <div className="relative flex-1">
+              <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-[#59606d] dark:text-[#9ba2b0] pointer-events-none" />
               <input
                 type="text"
                 placeholder="Filter files by name..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-7 pr-2 py-1 text-xs rounded border border-[#e5e3dc] dark:border-[#282b33] bg-[#f8f7f4] dark:bg-[#111215] focus:border-[#2d6a4f] dark:focus:border-[#52b788] focus:outline-none"
+                className="w-full pl-7 pr-6 py-1 text-xs rounded border border-[#e5e3dc] dark:border-[#282b33] bg-[#f8f7f4] dark:bg-[#111215] focus:border-[#2d6a4f] dark:focus:border-[#52b788] focus:outline-none"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2]"
+                  title="Clear filter"
+                  aria-label="Clear filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
+            <button
+              type="button"
+              onClick={() => setHideNonMarkdown(prev => !prev)}
+              className={`px-2 py-1 text-[11px] font-mono rounded border transition-colors shrink-0 flex items-center gap-1 ${
+                hideNonMarkdown
+                  ? 'border-[#2d6a4f] text-[#2d6a4f] bg-[#2d6a4f]/10 dark:border-[#52b788] dark:text-[#52b788] dark:bg-[#52b788]/20 font-semibold shadow-xs'
+                  : 'border-[#e5e3dc] dark:border-[#282b33] text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] bg-[#ffffff] dark:bg-[#17191e]'
+              } focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]`}
+              title={
+                hideNonMarkdown
+                  ? 'Hiding non-.md files (click to show all files)'
+                  : 'Showing all files (click to hide non-.md files)'
+              }
+              aria-label="Toggle hide non-markdown files"
+              aria-pressed={hideNonMarkdown}
+            >
+              <Filter className="w-3 h-3" />
+              <span>.md</span>
+            </button>
           </div>
+
 
           {/* New File Inline Form */}
           {isNewFilePromptOpen && (
@@ -343,10 +409,26 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
                 />
               ))
             ) : (
-              <div className="py-8 text-center text-xs text-[#59606d] dark:text-[#9ba2b0] px-3">
-                {searchQuery ? 'No matching files found' : 'Workspace folder is empty'}
+              <div className="py-8 text-center text-xs text-[#59606d] dark:text-[#9ba2b0] px-3 space-y-1.5">
+                <p>
+                  {searchQuery
+                    ? 'No matching files found'
+                    : hideNonMarkdown
+                      ? 'No Markdown (.md) files found'
+                      : 'Workspace folder is empty'}
+                </p>
+                {hideNonMarkdown && !searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setHideNonMarkdown(false)}
+                    className="text-[11px] text-[#2d6a4f] dark:text-[#52b788] underline hover:opacity-80 transition-opacity"
+                  >
+                    Show all workspace files
+                  </button>
+                )}
               </div>
             )}
+
           </div>
         </>
       ) : (

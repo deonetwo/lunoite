@@ -24,7 +24,10 @@ export interface OpenTab {
   lastSavedAt: number;
   nativePath?: string;
   isSingleFile?: boolean;
+  isNonMarkdown?: boolean;
+  isForceShown?: boolean;
 }
+
 
 export interface WorkspaceState {
   rootHandle: FileSystemDirectoryHandle | null;
@@ -40,3 +43,12 @@ export interface RecentWorkspace {
   lastOpened: number;
   handleKey: string;
 }
+
+/**
+ * Checks whether a file node has a Markdown (.md or .markdown) extension.
+ */
+export function isMarkdownFile(node: { name: string; extension?: string }): boolean {
+  const ext = (node.extension || node.name.split('.').pop() || '').toLowerCase();
+  return ext === 'md' || ext === 'markdown';
+}
+

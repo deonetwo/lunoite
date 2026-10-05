@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileTreeNode as TreeNodeType } from '../../types/workspace';
+import { FileTreeNode as TreeNodeType, isMarkdownFile } from '../../types/workspace';
 import {
   ChevronRight,
   ChevronDown,
@@ -92,10 +92,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     setIsEditing(true);
   };
 
-  const isMarkdown =
-    node.extension === 'md' ||
-    node.extension === 'markdown' ||
-    node.extension === 'txt';
+  const isMarkdown = isMarkdownFile(node);
 
   return (
     <div>

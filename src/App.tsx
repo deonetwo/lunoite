@@ -16,6 +16,7 @@ import { WelcomeWorkspace } from './components/Workspace/WelcomeWorkspace';
 import { WorkspaceSearchModal } from './components/Workspace/WorkspaceSearchModal';
 import { NewWorkspaceModal } from './components/Workspace/NewWorkspaceModal';
 import { RecentWorkspacesModal } from './components/Workspace/RecentWorkspacesModal';
+import { NonMarkdownPreviewNotice } from './components/Editor/NonMarkdownPreviewNotice';
 import { scrollToActiveMatch } from './lib/searchHighlightExtension';
 import { getTauriCliFile, readNativeFile, writeNativeFile } from './lib/tauri';
 
@@ -23,8 +24,9 @@ import { computeStats, downloadMarkdownFile } from './lib/markdown';
 import { INITIAL_CARDS } from './lib/defaultCards';
 import { ReferenceCard } from './types/shelf';
 import { DocumentStats, SaveStatus } from './types/editor';
-import { FileTreeNode, RecentWorkspace } from './types/workspace';
+import { FileTreeNode, RecentWorkspace, isMarkdownFile } from './types/workspace';
 import { SearchMatch } from './types/search';
+
 
 export const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
@@ -60,6 +62,7 @@ export const App: React.FC = () => {
     updateTabContent,
     markTabClean,
     closeAllTabs,
+    forceShowTab,
   } = useTabs();
 
   // Reference shelf cards (stored in localStorage)
@@ -84,6 +87,9 @@ export const App: React.FC = () => {
   const [editorSearchQuery, setEditorSearchQuery] = useState<string | undefined>(undefined);
   const [clipText, setClipText] = useState<string | undefined>(undefined);
   const [isSavingToDisk, setIsSavingToDisk] = useState<boolean>(false);
+  const [isReadingNonMd, setIsReadingNonMd] = useState<boolean>(false);
+
+
 
   // Open single Markdown file from disk (independent of workspace folder)
   const handleOpenSingleFile = useCallback(async () => {
@@ -162,13 +168,13 @@ export const App: React.FC = () => {
         : 'saved'
       : 'local_only';
 
-  // Open file from explorer tree or search results
-  const handleSelectFile = useCallback(
+  // Internal helper to read and open file into editor tab
+  const doOpenFile = useCallback(
     async (node: FileTreeNode, targetMatch?: SearchMatch, query?: string) => {
-      if (node.kind === 'file') {
-        // Ensure in-document find bar is not open when clicking search results
-        setIsFindBarOpen(false);
+      if (node.kind !== 'file') return;
+      setIsFindBarOpen(false);
 
+      try {
         const content = await readFile(node.handle as FileSystemFileHandle);
         openTab(node, content);
 
@@ -227,10 +233,76 @@ export const App: React.FC = () => {
           setTimeout(executeJump, 120);
           setTimeout(executeJump, 280);
         }
+      } catch (err) {
+        console.error('Failed to open file:', err);
       }
     },
     [readFile, openTab, activeTabId]
   );
+
+  // Open file from explorer tree or search results
+  const handleSelectFile = useCallback(
+    async (node: FileTreeNode, targetMatch?: SearchMatch, query?: string) => {
+      if (node.kind !== 'file') return;
+      setIsFindBarOpen(false);
+
+      const isMd = isMarkdownFile(node);
+      const existingTab = tabs.find(t => t.id === node.id);
+
+      if (existingTab) {
+        setActiveTabId(node.id);
+        if (existingTab.isForceShown || !existingTab.isNonMarkdown) {
+          const effectiveQuery =
+            query ||
+            (targetMatch && targetMatch.lineContent
+              ? targetMatch.lineContent.slice(
+                  targetMatch.matchStartIndex,
+                  targetMatch.matchEndIndex
+                )
+              : undefined);
+          if (effectiveQuery) {
+            setEditorSearchQuery(effectiveQuery);
+          }
+        }
+        return;
+      }
+
+      // If not a Markdown file, open tab without reading content; shows warning inside the preview
+      if (!isMd) {
+        openTab(node, '', {
+          isNonMarkdown: true,
+          isForceShown: false,
+        });
+        return;
+      }
+
+      // For Markdown files, read and open directly
+      await doOpenFile(node, targetMatch, query);
+    },
+    [tabs, openTab, setActiveTabId, doOpenFile]
+  );
+
+  // User clicked "Force Show Contents" inside the in-preview warning notice
+  const handleForceShowCurrentTab = useCallback(async () => {
+    if (!activeTab) return;
+    setIsReadingNonMd(true);
+    try {
+      let content = '';
+      if (activeTab.nativePath) {
+        content = await readNativeFile(activeTab.nativePath);
+      } else if (activeTab.handle) {
+        content = await readFile(activeTab.handle);
+      }
+      forceShowTab(activeTab.id, content);
+    } catch (err) {
+      console.error('Failed to read non-markdown file:', err);
+      alert(`Could not read ${activeTab.name}: ${(err as Error).message}`);
+    } finally {
+      setIsReadingNonMd(false);
+    }
+  }, [activeTab, readFile, forceShowTab]);
+
+
 
   // Save current active tab directly to disk
   const handleSaveActiveTab = useCallback(async () => {
@@ -768,25 +840,35 @@ export const App: React.FC = () => {
           )}
 
           {activeTab ? (
-            <EditorCanvas
-              initialContent={activeTab.content}
-              onChange={handleEditorChange}
-              onSave={handleSaveActiveTab}
-              onClipSelection={handleClipSelection}
-              isZenMode={isZenMode}
-              onEditorReady={ed => {
-                editorRef.current = ed as Editor;
-              }}
-              searchHighlightQuery={editorSearchQuery}
-              isFindBarOpen={isFindBarOpen}
-              onToggleFindBar={open => {
-                setIsFindBarOpen(open);
-                if (open) {
-                  setSidebarTab('files');
-                }
-              }}
-            />
+            activeTab.isNonMarkdown && !activeTab.isForceShown ? (
+              <NonMarkdownPreviewNotice
+                fileName={activeTab.name}
+                extension={activeTab.name.split('.').pop()}
+                onForceShow={handleForceShowCurrentTab}
+                isLoading={isReadingNonMd}
+              />
+            ) : (
+              <EditorCanvas
+                initialContent={activeTab.content}
+                onChange={handleEditorChange}
+                onSave={handleSaveActiveTab}
+                onClipSelection={handleClipSelection}
+                isZenMode={isZenMode}
+                onEditorReady={ed => {
+                  editorRef.current = ed as Editor;
+                }}
+                searchHighlightQuery={editorSearchQuery}
+                isFindBarOpen={isFindBarOpen}
+                onToggleFindBar={open => {
+                  setIsFindBarOpen(open);
+                  if (open) {
+                    setSidebarTab('files');
+                  }
+                }}
+              />
+            )
           ) : workspace.rootHandle ? (
+
             <div className="flex-1 flex items-center justify-center p-6 text-center text-xs text-[#59606d] dark:text-[#9ba2b0]">
               <div className="space-y-2">
                 <p className="text-sm font-medium text-[#191b1f] dark:text-[#eceef2]">
@@ -872,5 +954,7 @@ export const App: React.FC = () => {
     </div>
   );
 };
+
+
 
 export default App;

@@ -11,7 +11,12 @@ export function useTabs() {
     (
       node: FileTreeNode,
       content: string,
-      options?: { nativePath?: string; isSingleFile?: boolean }
+      options?: {
+        nativePath?: string;
+        isSingleFile?: boolean;
+        isNonMarkdown?: boolean;
+        isForceShown?: boolean;
+      }
     ) => {
       setTabs(prev => {
         const existing = prev.find(t => t.id === node.id);
@@ -29,6 +34,8 @@ export function useTabs() {
           lastSavedAt: Date.now(),
           nativePath: options?.nativePath,
           isSingleFile: options?.isSingleFile,
+          isNonMarkdown: options?.isNonMarkdown,
+          isForceShown: options?.isForceShown,
         };
         return [...prev, newTab];
       });
@@ -36,6 +43,21 @@ export function useTabs() {
     },
     []
   );
+
+  const forceShowTab = useCallback((tabId: string, content: string) => {
+    setTabs(prev =>
+      prev.map(t =>
+        t.id === tabId
+          ? {
+              ...t,
+              content,
+              isForceShown: true,
+            }
+          : t
+      )
+    );
+  }, []);
+
 
   const closeTab = useCallback((tabId: string) => {
     setTabs(prev => {
@@ -89,5 +111,7 @@ export function useTabs() {
     updateTabContent,
     markTabClean,
     closeAllTabs,
+    forceShowTab,
   };
 }
+
