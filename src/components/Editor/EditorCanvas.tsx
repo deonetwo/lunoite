@@ -73,6 +73,8 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
 
   const [findBarInitialQuery, setFindBarInitialQuery] = useState('');
   const lastEmittedContentRef = useRef(initialContent);
+  const lastSelectionRef = useRef<{ from: number; to: number } | null>(null);
+  const isFirstMountRef = useRef(true);
 
   const editor = useEditor({
     extensions: [
@@ -114,7 +116,13 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
         autocapitalize: 'off',
       },
     },
+    onSelectionUpdate: ({ editor: ed }) => {
+      const { from, to } = ed.state.selection;
+      lastSelectionRef.current = { from, to };
+    },
     onUpdate: ({ editor: ed }) => {
+      const { from, to } = ed.state.selection;
+      lastSelectionRef.current = { from, to };
       const storage = ed.storage as unknown as { markdown?: { getMarkdown: () => string } };
       const md = storage.markdown ? storage.markdown.getMarkdown() : ed.getText();
       lastEmittedContentRef.current = md;
@@ -127,6 +135,39 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
       onEditorReady(editor);
     }
   }, [editor, onEditorReady]);
+
+  // Restore cursor position and text selection when tab becomes active
+  useEffect(() => {
+    if (!editor) return;
+
+    if (isActive) {
+      const scrollContainer = document.getElementById(
+        tabId ? `editor-scroll-container-${tabId}` : 'editor-scroll-container'
+      );
+      const savedScrollTop = scrollContainer?.scrollTop;
+
+      if (lastSelectionRef.current) {
+        const { from, to } = lastSelectionRef.current;
+        const { doc } = editor.state;
+        const safeFrom = Math.min(Math.max(0, from), doc.content.size);
+        const safeTo = Math.min(Math.max(safeFrom, to), doc.content.size);
+        editor.commands.setTextSelection({ from: safeFrom, to: safeTo });
+      }
+
+      if (!isFirstMountRef.current) {
+        if (editor.view?.dom) {
+          editor.view.dom.focus({ preventScroll: true });
+        } else {
+          editor.commands.focus();
+        }
+
+        if (scrollContainer && savedScrollTop !== undefined && scrollContainer.scrollTop !== savedScrollTop) {
+          scrollContainer.scrollTop = savedScrollTop;
+        }
+      }
+    }
+    isFirstMountRef.current = false;
+  }, [isActive, editor, tabId]);
 
   // Sync editor content if changed externally (e.g. disk reload, force show)
   useEffect(() => {
