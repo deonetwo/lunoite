@@ -98,7 +98,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     <div>
       <div
         onClick={handleRowClick}
-        style={{ paddingLeft: `${Math.max(8, level * 14 + 8)}px` }}
+        style={{ paddingLeft: `${level * 18 + 8}px` }}
         className={`group relative flex items-center justify-between py-1.5 pr-2 rounded text-xs cursor-pointer select-none transition-colors ${
           isActive
             ? 'bg-[#2d6a4f]/15 text-[#2d6a4f] dark:bg-[#52b788]/20 dark:text-[#52b788] font-medium'
@@ -109,17 +109,15 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
         aria-expanded={isDirectory ? isExpanded : undefined}
       >
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          {isDirectory ? (
-            <span className="p-0.5 text-[#59606d] dark:text-[#9ba2b0]">
-              {isExpanded ? (
-                <ChevronDown className="w-3 h-3" />
+          <span className="w-4 h-4 shrink-0 flex items-center justify-center text-[#59606d] dark:text-[#9ba2b0]">
+            {isDirectory && (
+              isExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5" />
               ) : (
-                <ChevronRight className="w-3 h-3" />
-              )}
-            </span>
-          ) : (
-            <span className="w-3" />
-          )}
+                <ChevronRight className="w-3.5 h-3.5" />
+              )
+            )}
+          </span>
 
           {isDirectory ? (
             isExpanded ? (
@@ -223,7 +221,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
             ))
           ) : (
             <div
-              style={{ paddingLeft: `${(level + 1) * 14 + 18}px` }}
+              style={{ paddingLeft: `${(level + 1) * 18 + 30}px` }}
               className="py-1 text-[11px] text-[#59606d] dark:text-[#9ba2b0] italic"
             >
               Empty folder
