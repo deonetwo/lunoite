@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TaskList } from '@tiptap/extension-task-list';
@@ -23,6 +23,8 @@ interface EditorCanvasProps {
   onSave: () => void;
   onClipSelection: (text: string) => void;
   isZenMode: boolean;
+  isActive?: boolean;
+  tabId?: string;
   onEditorReady?: (editorInstance: unknown) => void;
   searchHighlightQuery?: string;
   isFindBarOpen?: boolean;
@@ -48,6 +50,8 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
   onSave,
   onClipSelection,
   isZenMode,
+  isActive = true,
+  tabId,
   onEditorReady,
   searchHighlightQuery,
   isFindBarOpen,
@@ -68,6 +72,7 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
   );
 
   const [findBarInitialQuery, setFindBarInitialQuery] = useState('');
+  const lastEmittedContentRef = useRef(initialContent);
 
   const editor = useEditor({
     extensions: [
@@ -112,6 +117,7 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
     onUpdate: ({ editor: ed }) => {
       const storage = ed.storage as unknown as { markdown?: { getMarkdown: () => string } };
       const md = storage.markdown ? storage.markdown.getMarkdown() : ed.getText();
+      lastEmittedContentRef.current = md;
       onChange(md);
     },
   });
@@ -122,29 +128,39 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
     }
   }, [editor, onEditorReady]);
 
-  // Sync editor content when switching between tabs
+  // Sync editor content if changed externally (e.g. disk reload, force show)
   useEffect(() => {
     if (editor) {
-      const storage = editor.storage as unknown as { markdown?: { getMarkdown: () => string } };
-      const current = storage.markdown ? storage.markdown.getMarkdown() : editor.getText();
-      if (initialContent !== current) {
-        editor.commands.setContent(initialContent, { emitUpdate: false });
+      if (initialContent !== lastEmittedContentRef.current) {
+        lastEmittedContentRef.current = initialContent;
+        const storage = editor.storage as unknown as { markdown?: { getMarkdown: () => string } };
+        const current = storage.markdown ? storage.markdown.getMarkdown() : editor.getText();
+        if (initialContent !== current) {
+          editor.commands.setContent(initialContent, { emitUpdate: false });
+        }
       }
     }
   }, [editor, initialContent]);
 
   // Sync external search highlight (e.g. from Workspace Search)
   useEffect(() => {
-    if (editor && searchHighlightQuery) {
-      setFindBarInitialQuery(searchHighlightQuery);
-      // Highlight matching text without opening the in-document find bar
-      editor.commands.setSearchTerm(searchHighlightQuery);
+    if (editor) {
+      if (searchHighlightQuery) {
+        setFindBarInitialQuery(searchHighlightQuery);
+        // Highlight matching text without opening the in-document find bar
+        editor.commands.setSearchTerm(searchHighlightQuery);
+      } else {
+        editor.commands.clearSearchTerm();
+      }
     }
   }, [editor, searchHighlightQuery]);
 
-  // Global Ctrl+S and Ctrl+F listeners
+
+  // Global Ctrl+S and Ctrl+F listeners (active tab only)
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      if (!isActive) return;
+
       // Ctrl+S: Save file
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
@@ -163,7 +179,7 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
         setFindOpen(true);
       }
     },
-    [onSave, editor, setFindOpen]
+    [isActive, onSave, editor, setFindOpen]
   );
 
   useEffect(() => {
@@ -176,22 +192,24 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
       {/* Top Toolbar is pinned at top, hidden in Zen Mode */}
       {!isZenMode && <EditorToolbar editor={editor} />}
 
-      {/* Floating In-Document Find Bar - Fixed and Sticky at top right */}
-      <EditorFindBar
-        editor={editor}
-        isOpen={isFindOpen}
-        onClose={() => setFindOpen(false)}
-        initialQuery={findBarInitialQuery}
-        isZenMode={isZenMode}
-      />
+      {/* Floating In-Document Find Bar - Fixed and Sticky at top right (active tab only) */}
+      {isActive && (
+        <EditorFindBar
+          editor={editor}
+          isOpen={isFindOpen}
+          onClose={() => setFindOpen(false)}
+          initialQuery={findBarInitialQuery}
+          isZenMode={isZenMode}
+        />
+      )}
 
       {/* Scrollable Document Container */}
       <div
-        id="editor-scroll-container"
-        className="flex-1 flex flex-col min-h-0 overflow-y-auto transition-colors relative"
+        id={tabId ? `editor-scroll-container-${tabId}` : 'editor-scroll-container'}
+        className="editor-scroll-container flex-1 flex flex-col min-h-0 overflow-y-auto transition-colors relative"
       >
         {/* Floating Bubble Menu on text selection */}
-        <BubbleMenu editor={editor} onClipSelection={onClipSelection} />
+        <BubbleMenu editor={editor} onClipSelection={onClipSelection} isActive={isActive} />
 
         {/* Centered Document Canvas (Paper Sheet) */}
         <div className="flex-1 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex justify-center">

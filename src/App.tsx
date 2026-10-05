@@ -73,6 +73,7 @@ export const App: React.FC = () => {
 
   // Editor and UI state
   const editorRef = useRef<Editor | null>(null);
+  const editorsRef = useRef<Map<string, Editor>>(new Map());
   const saveTimeoutRef = useRef<number | null>(null);
 
   const [isExplorerOpen, setIsExplorerOpen] = useState<boolean>(true);
@@ -88,6 +89,15 @@ export const App: React.FC = () => {
   const [clipText, setClipText] = useState<string | undefined>(undefined);
   const [isSavingToDisk, setIsSavingToDisk] = useState<boolean>(false);
   const [isReadingNonMd, setIsReadingNonMd] = useState<boolean>(false);
+
+  // Sync active editor reference when activeTabId changes
+  useEffect(() => {
+    if (activeTabId) {
+      editorRef.current = editorsRef.current.get(activeTabId) || null;
+    } else {
+      editorRef.current = null;
+    }
+  }, [activeTabId]);
 
 
 
@@ -187,51 +197,51 @@ export const App: React.FC = () => {
               )
             : undefined);
 
-        if (effectiveQuery) {
-          setEditorSearchQuery(effectiveQuery);
-        }
+        setEditorSearchQuery(effectiveQuery);
 
-        // Reliably locate match in editor document and scroll directly into viewport center
-        const executeJump = () => {
-          if (!editorRef.current) return false;
-          const editor = editorRef.current;
+        if (effectiveQuery || targetMatch) {
+          // Reliably locate match in editor document and scroll directly into viewport center
+          const executeJump = () => {
+            const editor = editorsRef.current.get(node.id) || editorRef.current;
+            if (!editor) return false;
 
-          if (effectiveQuery) {
-            editor.commands.jumpToMatch(
-              effectiveQuery,
-              false,
-              targetMatch?.matchIndex,
-              targetMatch?.lineContent
-            );
-          } else if (targetMatch) {
-            const doc = editor.state.doc;
-            const fullText = doc.textBetween(0, doc.content.size, '\n');
-            const lines = fullText.split('\n');
-            let offset = 0;
-            const lineIdx = Math.max(0, targetMatch.lineNumber - 1);
-            for (let i = 0; i < Math.min(lineIdx, lines.length); i++) {
-              offset += lines[i].length + 1;
+            if (effectiveQuery) {
+              editor.commands.jumpToMatch(
+                effectiveQuery,
+                false,
+                targetMatch?.matchIndex,
+                targetMatch?.lineContent
+              );
+            } else if (targetMatch) {
+              const doc = editor.state.doc;
+              const fullText = doc.textBetween(0, doc.content.size, '\n');
+              const lines = fullText.split('\n');
+              let offset = 0;
+              const lineIdx = Math.max(0, targetMatch.lineNumber - 1);
+              for (let i = 0; i < Math.min(lineIdx, lines.length); i++) {
+                offset += lines[i].length + 1;
+              }
+              const matchStart = offset + targetMatch.matchStartIndex;
+              const matchEnd = offset + targetMatch.matchEndIndex;
+              const safeFrom = Math.min(Math.max(1, matchStart + 1), doc.content.size);
+              const safeTo = Math.min(Math.max(safeFrom, matchEnd + 1), doc.content.size);
+              editor.commands.setTextSelection({ from: safeFrom, to: safeTo });
             }
-            const matchStart = offset + targetMatch.matchStartIndex;
-            const matchEnd = offset + targetMatch.matchEndIndex;
-            const safeFrom = Math.min(Math.max(1, matchStart + 1), doc.content.size);
-            const safeTo = Math.min(Math.max(safeFrom, matchEnd + 1), doc.content.size);
-            editor.commands.setTextSelection({ from: safeFrom, to: safeTo });
+
+            scrollToActiveMatch(10, 40);
+            return true;
+          };
+
+          const isAlreadyActiveTab = activeTabId === node.id;
+          if (isAlreadyActiveTab) {
+            // If already in the active document, jump immediately with 0ms delay
+            executeJump();
+          } else {
+            // Fire jump attempts after content has been rendered into the canvas
+            setTimeout(executeJump, 40);
+            setTimeout(executeJump, 120);
+            setTimeout(executeJump, 280);
           }
-
-          scrollToActiveMatch(10, 40);
-          return true;
-        };
-
-        const isAlreadyActiveTab = activeTabId === node.id;
-        if (isAlreadyActiveTab) {
-          // If already in the active document, jump immediately with 0ms delay
-          executeJump();
-        } else {
-          // Fire jump attempts after content has been rendered into the canvas
-          setTimeout(executeJump, 40);
-          setTimeout(executeJump, 120);
-          setTimeout(executeJump, 280);
         }
       } catch (err) {
         console.error('Failed to open file:', err);
@@ -251,21 +261,57 @@ export const App: React.FC = () => {
 
       if (existingTab) {
         setActiveTabId(node.id);
+        const effectiveQuery =
+          query ||
+          (targetMatch && targetMatch.lineContent
+            ? targetMatch.lineContent.slice(
+                targetMatch.matchStartIndex,
+                targetMatch.matchEndIndex
+              )
+            : undefined);
+
+        setEditorSearchQuery(effectiveQuery);
+
         if (existingTab.isForceShown || !existingTab.isNonMarkdown) {
-          const effectiveQuery =
-            query ||
-            (targetMatch && targetMatch.lineContent
-              ? targetMatch.lineContent.slice(
-                  targetMatch.matchStartIndex,
-                  targetMatch.matchEndIndex
-                )
-              : undefined);
-          if (effectiveQuery) {
-            setEditorSearchQuery(effectiveQuery);
+          if (effectiveQuery || targetMatch) {
+            const executeJump = () => {
+              const editor = editorsRef.current.get(node.id) || editorRef.current;
+              if (!editor) return false;
+
+              if (effectiveQuery) {
+                editor.commands.jumpToMatch(
+                  effectiveQuery,
+                  false,
+                  targetMatch?.matchIndex,
+                  targetMatch?.lineContent
+                );
+              } else if (targetMatch) {
+                const doc = editor.state.doc;
+                const fullText = doc.textBetween(0, doc.content.size, '\n');
+                const lines = fullText.split('\n');
+                let offset = 0;
+                const lineIdx = Math.max(0, targetMatch.lineNumber - 1);
+                for (let i = 0; i < Math.min(lineIdx, lines.length); i++) {
+                  offset += lines[i].length + 1;
+                }
+                const matchStart = offset + targetMatch.matchStartIndex;
+                const matchEnd = offset + targetMatch.matchEndIndex;
+                const safeFrom = Math.min(Math.max(1, matchStart + 1), doc.content.size);
+                const safeTo = Math.min(Math.max(safeFrom, matchEnd + 1), doc.content.size);
+                editor.commands.setTextSelection({ from: safeFrom, to: safeTo });
+              }
+
+              scrollToActiveMatch(10, 40);
+              return true;
+            };
+
+            setTimeout(executeJump, 40);
+            setTimeout(executeJump, 120);
           }
         }
         return;
       }
+
 
       // If not a Markdown file, open tab without reading content; shows warning inside the preview
       if (!isMd) {
@@ -283,26 +329,44 @@ export const App: React.FC = () => {
   );
 
   // User clicked "Force Show Contents" inside the in-preview warning notice
-  const handleForceShowCurrentTab = useCallback(async () => {
-    if (!activeTab) return;
-    setIsReadingNonMd(true);
-    try {
-      let content = '';
-      if (activeTab.nativePath) {
-        content = await readNativeFile(activeTab.nativePath);
-      } else if (activeTab.handle) {
-        content = await readFile(activeTab.handle);
+  const handleForceShowTab = useCallback(
+    async (tabId: string) => {
+      const targetTab = tabs.find(t => t.id === tabId);
+      if (!targetTab) return;
+      setIsReadingNonMd(true);
+      try {
+        let content = '';
+        if (targetTab.nativePath) {
+          content = await readNativeFile(targetTab.nativePath);
+        } else if (targetTab.handle) {
+          content = await readFile(targetTab.handle);
+        }
+        forceShowTab(targetTab.id, content);
+      } catch (err) {
+        console.error('Failed to read non-markdown file:', err);
+        alert(`Could not read ${targetTab.name}: ${(err as Error).message}`);
+      } finally {
+        setIsReadingNonMd(false);
       }
-      forceShowTab(activeTab.id, content);
-    } catch (err) {
-      console.error('Failed to read non-markdown file:', err);
-      alert(`Could not read ${activeTab.name}: ${(err as Error).message}`);
-    } finally {
-      setIsReadingNonMd(false);
-    }
-  }, [activeTab, readFile, forceShowTab]);
+    },
+    [tabs, readFile, forceShowTab]
+  );
 
+  // Close tab and clean up editor reference
+  const handleCloseTab = useCallback(
+    (tabId: string) => {
+      editorsRef.current.delete(tabId);
+      closeTab(tabId);
+    },
+    [closeTab]
+  );
 
+  // Close all tabs and clear all editor references
+  const handleCloseAllTabs = useCallback(() => {
+    editorsRef.current.clear();
+    editorRef.current = null;
+    closeAllTabs();
+  }, [closeAllTabs]);
 
   // Save current active tab directly to disk
   const handleSaveActiveTab = useCallback(async () => {
@@ -336,14 +400,18 @@ export const App: React.FC = () => {
     }
   }, [activeTab, writeFile, markTabClean]);
 
-  // Handle editor updates with debounced direct disk auto-sync
-  const handleEditorChange = useCallback(
-    (newMarkdown: string) => {
-      if (!activeTab) return;
+  // Handle editor updates per tab with debounced direct disk auto-sync
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
 
-      updateTabContent(activeTab.id, newMarkdown);
+  const handleTabContentChange = useCallback(
+    (tabId: string, newMarkdown: string) => {
+      updateTabContent(tabId, newMarkdown);
 
-      if (activeTab.nativePath) {
+      const targetTab = tabsRef.current.find(t => t.id === tabId);
+      if (!targetTab) return;
+
+      if (targetTab.nativePath) {
         if (saveTimeoutRef.current) {
           clearTimeout(saveTimeoutRef.current);
         }
@@ -351,31 +419,30 @@ export const App: React.FC = () => {
         saveTimeoutRef.current = window.setTimeout(async () => {
           setIsSavingToDisk(true);
           try {
-            await writeNativeFile(activeTab.nativePath!, newMarkdown);
-            markTabClean(activeTab.id);
+            await writeNativeFile(targetTab.nativePath!, newMarkdown);
+            markTabClean(tabId);
           } catch (err) {
             console.error('Failed to auto-save native file:', err);
           } finally {
             setIsSavingToDisk(false);
           }
         }, 800);
-      } else if (activeTab.handle && typeof activeTab.handle.createWritable === 'function') {
-        // Debounce auto-save directly to disk (~800ms)
+      } else if (targetTab.handle && typeof targetTab.handle.createWritable === 'function') {
         if (saveTimeoutRef.current) {
           clearTimeout(saveTimeoutRef.current);
         }
 
         saveTimeoutRef.current = window.setTimeout(async () => {
           setIsSavingToDisk(true);
-          const success = await writeFile(activeTab.handle!, newMarkdown);
+          const success = await writeFile(targetTab.handle!, newMarkdown);
           setIsSavingToDisk(false);
           if (success) {
-            markTabClean(activeTab.id);
+            markTabClean(tabId);
           }
         }, 800);
       }
     },
-    [activeTab, updateTabContent, writeFile, markTabClean]
+    [updateTabContent, writeFile, markTabClean]
   );
 
   // Create new file
@@ -413,11 +480,11 @@ export const App: React.FC = () => {
     async (parentHandle: FileSystemDirectoryHandle, name: string) => {
       const targetTab = tabs.find(t => t.name === name);
       if (targetTab) {
-        closeTab(targetTab.id);
+        handleCloseTab(targetTab.id);
       }
       await deleteEntry(parentHandle, name);
     },
-    [tabs, closeTab, deleteEntry]
+    [tabs, handleCloseTab, deleteEntry]
   );
 
   // Rename node
@@ -502,16 +569,16 @@ export const App: React.FC = () => {
 
   // Workspace Switch and Creation Handlers
   const handleOpenWorkspace = useCallback(async () => {
-    closeAllTabs();
+    handleCloseAllTabs();
     await openWorkspace();
-  }, [closeAllTabs, openWorkspace]);
+  }, [handleCloseAllTabs, openWorkspace]);
 
   const handleSelectRecentWorkspace = useCallback(
     async (recent: RecentWorkspace) => {
-      closeAllTabs();
+      handleCloseAllTabs();
       await openRecentWorkspace(recent);
     },
-    [closeAllTabs, openRecentWorkspace]
+    [handleCloseAllTabs, openRecentWorkspace]
   );
 
   const handleCreateWorkspace = useCallback(
@@ -520,7 +587,7 @@ export const App: React.FC = () => {
       initialNoteTitle?: string,
       initialNoteContent?: string
     ): Promise<FileSystemDirectoryHandle | null> => {
-      closeAllTabs();
+      handleCloseAllTabs();
       const handle = await createNewWorkspace(
         name,
         initialNoteTitle,
@@ -549,13 +616,13 @@ export const App: React.FC = () => {
       }
       return handle;
     },
-    [closeAllTabs, createNewWorkspace, readFile, openTab]
+    [handleCloseAllTabs, createNewWorkspace, readFile, openTab]
   );
 
   const handleCloseWorkspace = useCallback(async () => {
-    closeAllTabs();
+    handleCloseAllTabs();
     await closeWorkspace();
-  }, [closeAllTabs, closeWorkspace]);
+  }, [handleCloseAllTabs, closeWorkspace]);
 
   // Startup: Check if opened via CLI in Tauri desktop mode
   useEffect(() => {
@@ -834,40 +901,66 @@ export const App: React.FC = () => {
             <TabBar
               tabs={tabs}
               activeTabId={activeTabId}
-              onSelectTab={setActiveTabId}
-              onCloseTab={closeTab}
+              onSelectTab={tabId => {
+                setActiveTabId(tabId);
+                setEditorSearchQuery(undefined);
+              }}
+              onCloseTab={handleCloseTab}
             />
           )}
 
-          {activeTab ? (
-            activeTab.isNonMarkdown && !activeTab.isForceShown ? (
-              <NonMarkdownPreviewNotice
-                fileName={activeTab.name}
-                extension={activeTab.name.split('.').pop()}
-                onForceShow={handleForceShowCurrentTab}
-                isLoading={isReadingNonMd}
-              />
-            ) : (
-              <EditorCanvas
-                initialContent={activeTab.content}
-                onChange={handleEditorChange}
-                onSave={handleSaveActiveTab}
-                onClipSelection={handleClipSelection}
-                isZenMode={isZenMode}
-                onEditorReady={ed => {
-                  editorRef.current = ed as Editor;
-                }}
-                searchHighlightQuery={editorSearchQuery}
-                isFindBarOpen={isFindBarOpen}
-                onToggleFindBar={open => {
-                  setIsFindBarOpen(open);
-                  if (open) {
-                    setSidebarTab('files');
-                  }
-                }}
-              />
-            )
+          {tabs.length > 0 ? (
+            <div className="flex-1 min-h-0 min-w-0 relative">
+              {tabs.map(tab => {
+                const isActive = tab.id === activeTabId;
+                return (
+                  <div
+                    key={tab.id}
+                    className={`h-full w-full flex flex-col ${
+                      isActive
+                        ? ''
+                        : 'absolute inset-0 invisible pointer-events-none -z-10'
+                    }`}
+                    aria-hidden={!isActive}
+                  >
+                    {tab.isNonMarkdown && !tab.isForceShown ? (
+                      <NonMarkdownPreviewNotice
+                        fileName={tab.name}
+                        extension={tab.name.split('.').pop()}
+                        onForceShow={() => handleForceShowTab(tab.id)}
+                        isLoading={isReadingNonMd}
+                      />
+                    ) : (
+                      <EditorCanvas
+                        initialContent={tab.content}
+                        isActive={isActive}
+                        tabId={tab.id}
+                        onChange={markdown => handleTabContentChange(tab.id, markdown)}
+                        onSave={handleSaveActiveTab}
+                        onClipSelection={handleClipSelection}
+                        isZenMode={isZenMode}
+                        onEditorReady={ed => {
+                          editorsRef.current.set(tab.id, ed as Editor);
+                          if (tab.id === activeTabId) {
+                            editorRef.current = ed as Editor;
+                          }
+                        }}
+                        searchHighlightQuery={isActive ? editorSearchQuery : undefined}
+                        isFindBarOpen={isActive ? isFindBarOpen : false}
+                        onToggleFindBar={open => {
+                          setIsFindBarOpen(open);
+                          if (open) {
+                            setSidebarTab('files');
+                          }
+                        }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           ) : workspace.rootHandle ? (
+
 
             <div className="flex-1 flex items-center justify-center p-6 text-center text-xs text-[#59606d] dark:text-[#9ba2b0]">
               <div className="space-y-2">

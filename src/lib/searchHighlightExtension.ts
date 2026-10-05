@@ -109,6 +109,7 @@ export function scrollToActiveMatch(maxRetries = 10, intervalMs = 40): void {
   const performScroll = () => {
     const el = document.querySelector('.search-match-active') as HTMLElement | null;
     const container =
+      (el?.closest('.editor-scroll-container') as HTMLElement | null) ||
       document.getElementById('editor-scroll-container') ||
       (document.querySelector('.ProseMirror')?.parentElement as HTMLElement | null);
 
