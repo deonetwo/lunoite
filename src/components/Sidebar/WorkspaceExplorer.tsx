@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { FileTreeNode as TreeNodeType, WorkspaceState, OpenTab, isMarkdownFile } from '../../types/workspace';
 import { SearchMatch } from '../../types/search';
 import { FileTreeNode } from './FileTreeNode';
@@ -8,6 +8,7 @@ import {
   FolderOpen,
   FilePlus,
   FolderPlus,
+  FolderMinus,
   RefreshCw,
   Search,
   X,
@@ -90,6 +91,124 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
       // ignore
     }
   }, [hideNonMarkdown]);
+
+  const workspaceStorageKey = workspace.name
+    ? `lunoite_expanded_folders_${workspace.name}`
+    : 'lunoite_expanded_folders_default';
+
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(workspaceStorageKey);
+      if (saved !== null) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return new Set<string>(parsed);
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return new Set<string>();
+  });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(workspaceStorageKey);
+      if (saved !== null) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setExpandedFolderIds(new Set<string>(parsed));
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    setExpandedFolderIds(new Set<string>());
+  }, [workspaceStorageKey]);
+
+  const handleToggleExpand = useCallback(
+    (folderId: string) => {
+      setExpandedFolderIds(prev => {
+        const next = new Set(prev);
+        if (next.has(folderId)) {
+          next.delete(folderId);
+        } else {
+          next.add(folderId);
+        }
+        try {
+          localStorage.setItem(workspaceStorageKey, JSON.stringify(Array.from(next)));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+    },
+    [workspaceStorageKey]
+  );
+
+  const handleExpandFolder = useCallback(
+    (folderId: string) => {
+      setExpandedFolderIds(prev => {
+        if (prev.has(folderId)) return prev;
+        const next = new Set(prev);
+        next.add(folderId);
+        try {
+          localStorage.setItem(workspaceStorageKey, JSON.stringify(Array.from(next)));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+    },
+    [workspaceStorageKey]
+  );
+
+  const handleCollapseAllFolders = useCallback(() => {
+    setExpandedFolderIds(new Set<string>());
+    try {
+      localStorage.setItem(workspaceStorageKey, JSON.stringify([]));
+    } catch {
+      // ignore
+    }
+  }, [workspaceStorageKey]);
+
+  const handleSelectFileWithReveal = useCallback(
+    (node: TreeNodeType, targetMatch?: SearchMatch, query?: string) => {
+      if (node.path && node.path.includes('/')) {
+        const parts = node.path.split('/');
+        const ancestors: string[] = [];
+        let current = '';
+        for (let i = 0; i < parts.length - 1; i++) {
+          current = current ? `${current}/${parts[i]}` : parts[i];
+          ancestors.push(current);
+        }
+        if (ancestors.length > 0) {
+          setExpandedFolderIds(prev => {
+            let changed = false;
+            const next = new Set(prev);
+            for (const a of ancestors) {
+              if (!next.has(a)) {
+                next.add(a);
+                changed = true;
+              }
+            }
+            if (changed) {
+              try {
+                localStorage.setItem(workspaceStorageKey, JSON.stringify(Array.from(next)));
+              } catch {
+                // ignore
+              }
+              return next;
+            }
+            return prev;
+          });
+        }
+      }
+      onSelectFile(node, targetMatch, query);
+    },
+    [onSelectFile, workspaceStorageKey]
+  );
 
   const [isNewFilePromptOpen, setIsNewFilePromptOpen] = useState(false);
   const [isNewFolderPromptOpen, setIsNewFolderPromptOpen] = useState(false);
@@ -207,6 +326,15 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
             aria-label="New folder"
           >
             <FolderPlus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleCollapseAllFolders}
+            className="p-1 rounded text-[#59606d] dark:text-[#9ba2b0] hover:text-[#191b1f] dark:hover:text-[#eceef2] hover:bg-black/5 dark:hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-[#2d6a4f] dark:focus-visible:outline-[#52b788]"
+            title="Collapse all folders"
+            aria-label="Collapse all folders"
+          >
+            <FolderMinus className="w-3.5 h-3.5" />
           </button>
           <button
             type="button"
@@ -401,7 +529,11 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
                   key={node.id}
                   node={node}
                   activeFileId={activeFileId}
-                  onSelectFile={onSelectFile}
+                  expandedFolderIds={expandedFolderIds}
+                  onToggleExpand={handleToggleExpand}
+                  onExpandFolder={handleExpandFolder}
+                  isSearching={Boolean(searchQuery.trim())}
+                  onSelectFile={handleSelectFileWithReveal}
                   onCreateFileInDir={dirHandle => handleOpenNewFilePrompt(dirHandle)}
                   onCreateFolderInDir={dirHandle => handleOpenNewFolderPrompt(dirHandle)}
                   onDeleteNode={onDeleteNode}
@@ -491,7 +623,7 @@ export const WorkspaceExplorer: React.FC<WorkspaceExplorerProps> = ({
             {textQuery.trim() && textResults.length > 0 ? (
               <WorkspaceSearchResults
                 results={textResults}
-                onSelectMatch={(result, match) => onSelectFile(result.node, match, textQuery)}
+                onSelectMatch={(result, match) => handleSelectFileWithReveal(result.node, match, textQuery)}
               />
             ) : textQuery.trim() && !isTextSearching ? (
               <div className="py-8 text-center text-xs text-[#59606d] dark:text-[#9ba2b0] px-3 space-y-1">

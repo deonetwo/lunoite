@@ -16,6 +16,10 @@ interface FileTreeNodeProps {
   node: TreeNodeType;
   level?: number;
   activeFileId: string | null;
+  expandedFolderIds?: Set<string>;
+  onToggleExpand?: (folderId: string) => void;
+  onExpandFolder?: (folderId: string) => void;
+  isSearching?: boolean;
   onSelectFile: (node: TreeNodeType) => void;
   onCreateFileInDir: (dirHandle: FileSystemDirectoryHandle) => void;
   onCreateFolderInDir?: (dirHandle: FileSystemDirectoryHandle) => void;
@@ -32,22 +36,37 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   node,
   level = 0,
   activeFileId,
+  expandedFolderIds,
+  onToggleExpand,
+  onExpandFolder,
+  isSearching = false,
   onSelectFile,
   onCreateFileInDir,
   onCreateFolderInDir,
   onDeleteNode,
   onRenameNode,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(level === 0 || level === 1);
+  const [localExpanded, setLocalExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(node.name);
 
   const isDirectory = node.kind === 'directory';
   const isActive = activeFileId === node.id;
+  const isExpanded = isDirectory
+    ? isSearching
+      ? true
+      : expandedFolderIds !== undefined
+        ? expandedFolderIds.has(node.id)
+        : localExpanded
+    : false;
 
   const handleRowClick = () => {
     if (isDirectory) {
-      setIsExpanded(prev => !prev);
+      if (onToggleExpand) {
+        onToggleExpand(node.id);
+      } else {
+        setLocalExpanded(prev => !prev);
+      }
     } else {
       onSelectFile(node);
     }
@@ -74,7 +93,11 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     e.stopPropagation();
     if (isDirectory) {
       onCreateFileInDir(node.handle as FileSystemDirectoryHandle);
-      setIsExpanded(true);
+      if (onExpandFolder) {
+        onExpandFolder(node.id);
+      } else {
+        setLocalExpanded(true);
+      }
     }
   };
 
@@ -82,7 +105,11 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     e.stopPropagation();
     if (isDirectory && onCreateFolderInDir) {
       onCreateFolderInDir(node.handle as FileSystemDirectoryHandle);
-      setIsExpanded(true);
+      if (onExpandFolder) {
+        onExpandFolder(node.id);
+      } else {
+        setLocalExpanded(true);
+      }
     }
   };
 
@@ -212,6 +239,10 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
                 node={child}
                 level={level + 1}
                 activeFileId={activeFileId}
+                expandedFolderIds={expandedFolderIds}
+                onToggleExpand={onToggleExpand}
+                onExpandFolder={onExpandFolder}
+                isSearching={isSearching}
                 onSelectFile={onSelectFile}
                 onCreateFileInDir={onCreateFileInDir}
                 onCreateFolderInDir={onCreateFolderInDir}
